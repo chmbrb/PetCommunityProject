@@ -15,6 +15,7 @@ Features are controlled by instance-level flags stored in the database and edita
 | Flag | Default | Notes |
 |------|---------|-------|
 | `open_registration` | on | Off = invite or approval only |
+| `sso_providers` | Google + Apple on the main instance; none elsewhere | Operator must register their own provider credentials first. Apple on the web needs the operator's own paid Apple Developer account, so it's optional. In the iOS app, Google is shown only once Sign in with Apple is available there (guideline 4.8). See [0019](0019-sign-in-options-passkeys-sso.md) |
 | `rehoming` | on | Individuals rehoming their own pets |
 | `communities` | on (from Phase 3) | |
 | `fostering` | off (Phase 4) | |

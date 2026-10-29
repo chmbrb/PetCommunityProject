@@ -82,6 +82,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | P4 | Excessive data retention | M | M | Retention policy (proposed: applications deleted or anonymized 12 months after closure); account deletion removes PII and leaves tombstones | 2 |
 | P5 | Federated content can't be recalled | — | M | (Phase 5) Clear user notice; private data never federates; send `Delete` on removal | 5 |
 | P6 | Reporter identity exposed to the person reported | M | H | Reports are anonymous to the subject by default | 2 |
+| P7 | Google or Apple learn when users sign in to the platform | H | L | Disclosed in the privacy policy; minimal scopes (`openid email`); no provider SDK tracking; passkeys offered as the provider-independent default | 2 |
 
 ### Application security (STRIDE)
 
@@ -89,6 +90,10 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 |---|--------|---|---|-------------|-------|
 | S1 | Credential stuffing or phishing → account takeover | H | H | argon2id; rate limits and lockouts; check passwords against breached-password lists; **MFA required for verified orgs, moderators, and admins**; new-device login alerts | 1 |
 | S2 | Session theft | M | H | HttpOnly, Secure, SameSite cookies; short-lived sessions with rotation; revoke on password change | 1 |
+| S3 | Account takeover through SSO account linking (attacker signs in with a provider account using the victim's email) | M | H | Never link by email automatically; linking requires signing in to the existing account and confirming; email alert and audit entry on link/unlink; match identities by provider + subject | 2 |
+| S4 | User's Google or Apple account is compromised | M | H | Platform passkey or TOTP still required for privileged roles; new-device alerts; users can unlink a provider and revoke sessions | 2 |
+| S5 | Flawed OIDC handling (missing state/nonce/audience checks, trusting unverified emails) | M | H | Maintained OIDC library; PKCE, state, nonce, issuer, and audience validation; only provider-verified emails; tests for each failure case | 2 |
+| S6 | Magic link intercepted or reused | L | M | Single use, short expiry (≈15 min), bound to the requesting browser where possible; rate limits on requests | 1 |
 | T1 | Tampering via broken authorization (IDOR: accessing another user's records by changing an ID) | H | H | Authorization check on every resource in one central policy layer; tests for each role × resource | 1 |
 | T2 | SQL injection | L | H | Parameterized queries only (e.g. sqlc or pgx); no string-built SQL | 1 |
 | T3 | XSS via user content | M | H | Render Markdown to sanitized HTML on the server (allow-list); strict CSP; no `v-html` on unsanitized data | 1 |

@@ -14,6 +14,7 @@ This document records project decisions and the phased roadmap. See [DESCRIPTION
 | 6 | **Pet sitting uses a directory model, is opt-in per instance (off by default), and charges no booking fees.** Sitters are independent operators who carry their own insurance. | Nonprofit status protects directors and volunteers but not the organization or its reserve. Not controlling the work, not taking a cut of bookings, and requiring sitters to be insured keep the platform out of the transaction. Opt-in lets each operator enable sitting only after securing its own insurance and legal sign-off. |
 | 7 | **The project is licensed under AGPLv3.** | Anyone who runs a modified version as a network service must share its source with users. That keeps every instance's improvements available to the whole community, which is the norm for fediverse software. |
 | 8 | **Native Android and iOS apps are an end goal, built early: an API-first backend from Phase 1 and app beta releases alongside the Adoption MVP.** Recommended approach: package the Vue/Vuetify app with Capacitor (see [ADR 0018](adr/0018-mobile-apps-capacitor.md)). | Most users, including shelter staff and rescue volunteers, are on phones. Native apps add push notifications (application updates, messages, lost-pet alerts), camera and location access, and an app store presence that builds trust. Building on the same web codebase keeps one UI to maintain. |
+| 9 | **Sign-in uses passkeys first, with email magic links, passwords, and Google/Apple SSO as alternatives. Meta sign-in is not offered.** SSO is a per-instance setting (on for the main instance), never links accounts automatically, and gives no trust by itself. Privileged roles still need a passkey or authenticator app on the platform. See [ADR 0019](adr/0019-sign-in-options-passkeys-sso.md). | Reduces signup friction, the main reason people avoid new accounts, without making the platform depend on any one provider. Apple's guideline 4.8 requires an equivalent privacy-focused option wherever Google sign-in appears in the iOS app; to start, the iOS app simply doesn't offer Google sign-in. Meta's tracking and review process conflict with the platform's privacy goals. |
 
 ## Principles
 
@@ -28,7 +29,7 @@ This document records project decisions and the phased roadmap. See [DESCRIPTION
 
 | Tier | How it's earned | What it allows |
 |------|-----------------|----------------|
-| Unverified user | Email signup | Browse, follow, comment, report |
+| Unverified user | Signup by passkey, email, or Google/Apple sign-in | Browse, follow, comment, report |
 | ID-verified individual | Identity check | Apply to adopt or foster, post in communities, rehome a pet (rehoming fee only) |
 | Verified organization | Shelter/rescue documentation (e.g. EIN, 501(c)(3)), manual review | Create and manage adoption listings and a community, manage staff accounts |
 | Verified sitter *(Phase 7, opt-in instances only)* | ID check, valid pet-sitter liability insurance and bonding certificate, manual review | Sitter profile in the directory. Verification is dated and states exactly what was checked; it expires with the insurance certificate. |
@@ -41,7 +42,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - **Proxy:** Caddy (automatic TLS)
 - **Backend:** Go API, with a Postgres-backed job queue (e.g. `river`) for media processing, notifications, and later federation delivery
 - **Frontend:** Vuetify SPA, plus server-rendered listing pages and OpenGraph metadata so listings rank in search and share well on social media
-- **Mobile:** the same Vuetify app packaged as native Android and iOS apps with Capacitor; push notifications through FCM (Android) and APNs (iOS)
+- **Mobile:** the same Vuetify app packaged as native Android and iOS apps with Capacitor; push notifications through FCM (Android), APNs (iOS), and UnifiedPush (Android without Google services, and the F-Droid build); installable web app with web push as the iOS stopgap until the App Store account exists
 - **Database:** PostgreSQL with PostGIS (location search) and built-in full-text search (no separate search cluster)
 - **Media:** S3-compatible object storage (MinIO, or a hosted provider)
 - **Orchestration:** docker compose
@@ -78,6 +79,8 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 ### Phase 1: Foundation
 - Compose stack (Caddy, Go API, Postgres, object storage), CI
 - Auth, accounts, and profiles modeled as AP actors
+- Sign-in with passkeys, email magic links, and passwords; accounts support multiple sign-in methods
+- Spike: how instances accept Google/Apple sign-in from the shared mobile app
 - Versioned public API (`/api/v1`) used by both web and mobile; token auth for mobile clients
 - Mobile shell: Capacitor project for Android and iOS, building in CI, with sign-in and an instance picker
 - Media pipeline (re-encode, EXIF strip, hash matching)
@@ -93,7 +96,8 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - Notifications: in-app, email, and push (application updates, new messages, saved-search matches)
 - Moderation tools: report queue, actions, audit log
 - Server-rendered listing pages with OpenGraph metadata
-- Mobile beta: Android (Play Store testing track) and iOS (TestFlight) covering browse, search, apply, messaging, and push
+- Google and Apple sign-in on the web and Android, per-instance setting, with explicit account linking. The iOS app starts without Google sign-in (so guideline 4.8 doesn't apply); Sign in with Apple is added once the App Store account exists.
+- Mobile beta: Android (Play Store testing track) and iOS (TestFlight) covering browse, search, apply, messaging, and push. If the Apple account isn't ready yet, iOS users get the installable web app with web push (iOS 16.4+) instead.
 - App store requirements: in-app account deletion, report and block on all user content, privacy disclosures
 - **Exit:** a pilot shelter lists pets and processes real applications, including from the mobile beta
 
@@ -148,6 +152,8 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - Target reserve size (e.g. 6–12 months of operating costs)
 - Platform insurance cost per instance, and whether it's affordable for small operators
 - Minimum sitter insurance coverage required, and how certificates are checked
-- Who publishes the apps in the stores (needs an organization developer account: Apple $99/year, Google $25 once), and app store costs in the operating budget
+- App publishing accounts: one organization account for the whole project, not one per instance (Apple $99/year, Google Play $25 once). Once the nonprofit entity exists (with a D-U-N-S number), apply for Apple's developer fee waiver for nonprofits; it requires a free app with no in-app purchases, so donations stay on the website. Check Apple's current waiver terms and eligible countries before applying.
+- Android distribution beyond Google Play: an F-Droid build (free; requires a fully open-source build with UnifiedPush instead of Google's push service)
 - AGPL and the Apple App Store: Apple's terms conflict with GPL-family licenses for code the publisher doesn't own. Options: a contributor agreement that lets the project publish contributions in app stores, or an explicit app-store exception for the mobile client. Get legal advice before accepting outside contributions to the client code.
-- Push notification privacy: payloads pass through Google and Apple, so they should carry no personal data. Should the Android app also support UnifiedPush for devices without Google services?
+- Whether to offer a sign-in option for Meta later, based on what interviews show
+- Push notification privacy: payloads pass through Google and Apple, so they carry no personal data (see ADR 0018).

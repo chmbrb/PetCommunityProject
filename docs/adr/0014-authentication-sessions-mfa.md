@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-29
-- **Related:** THREAT_MODEL.md S1, S2, T4, E1, M1; PERSONAS.md (Account taker); [0018](0018-mobile-apps-capacitor.md)
+- **Related:** THREAT_MODEL.md S1, S2, T4, E1, M1; PERSONAS.md (Account taker); [0018](0018-mobile-apps-capacitor.md), [0019](0019-sign-in-options-passkeys-sso.md)
 
 ## Context
 
@@ -10,12 +10,13 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 
 ## Decision
 
-- **Passwords:** argon2id hashing; minimum length 12; rejected if found in breached-password lists (k-anonymity range check or a bundled list); login rate limits and temporary lockouts.
+- **Sign-in methods:** passkeys (primary), email magic links, passwords, and Google/Apple SSO. See [0019](0019-sign-in-options-passkeys-sso.md). Every method ends in the session model below.
+- **Passwords** (optional): argon2id hashing; minimum length 12; rejected if found in breached-password lists (k-anonymity range check or a bundled list); login rate limits and temporary lockouts.
 - **Sessions:** opaque random tokens stored hashed in Postgres; sent as `HttpOnly; Secure; SameSite=Lax` cookies; rotated on login and privilege change; all sessions revoked on password change. No JWTs for browser sessions.
 - **CSRF:** SameSite cookies plus a CSRF token on every state-changing request.
 - **Mobile apps:** sign-in returns an opaque bearer token (same session table, marked as a mobile session with a device name) stored in Keychain / Android Keystore. Tokens are long-lived but revocable, rotate on use of sensitive actions, and are listed in the user's "signed-in devices" page. Bearer-token requests don't need CSRF tokens. Biometric unlock can protect the app locally but doesn't replace MFA.
 - **MFA:** passkeys/WebAuthn and TOTP, with one-time recovery codes.
-  - **Required** for members of verified organizations, community moderators and owners, and instance admins.
+  - **Required** for members of verified organizations, community moderators and owners, and instance admins, including people who sign in with Google or Apple.
   - Optional for everyone else.
 - **Alerts:** email on new-device login, MFA changes, and email changes.
 - **Email verification** before posting or applying.
@@ -27,7 +28,7 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 - Web and mobile share one session model, so "sign out everywhere" and bans cover both.
 - One database lookup per request. Fine at this scale; cache in memory briefly if needed.
 - MFA requirements add friction for shelter staff. Passkeys keep it low; the onboarding flow must explain why.
-- Social logins (Google etc.) are not included. They could be added later as an option, but don't replace MFA requirements.
+- Google and Apple sign-in are covered in [0019](0019-sign-in-options-passkeys-sso.md). They don't replace MFA requirements.
 
 ## Alternatives considered
 

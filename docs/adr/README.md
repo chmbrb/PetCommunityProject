@@ -26,6 +26,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0016](0016-backups-wal-g.md) | Backups with WAL-G | Proposed |
 | [0017](0017-instance-feature-flags.md) | Instance-level feature flags | Accepted |
 | [0018](0018-mobile-apps-capacitor.md) | Native mobile apps with Capacitor | Proposed |
+| [0019](0019-sign-in-options-passkeys-sso.md) | Sign-in options: passkeys, magic links, and Google/Apple SSO | Accepted |
 
 ## Writing a new ADR
 

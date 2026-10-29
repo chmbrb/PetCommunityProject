@@ -32,7 +32,9 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 ### Identity and actors
 
-**Account**: a login. `id`, `email` (unique, verified), `password_hash` (argon2id), `mfa_enabled`, `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
+**Account**: a login. `id`, `email` (unique, verified; may be an Apple relay address), `password_hash` (argon2id, nullable), `mfa_enabled`, `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
+
+**AuthIdentity**: one sign-in method attached to an Account. `id`, `account_id`, `kind` (passkey / password / magic_link / oidc), `provider` (google / apple / other OIDC issuer; null for local methods), `subject` (provider's stable user ID; unique per provider), `email_at_link`, `credential_ref` (passkey public key etc.), `created_at`, `last_used_at`. An account must keep at least one. OIDC identities are matched by `provider` + `subject`, never by email.
 
 **Actor**: the public identity. `id`, `type` (person / organization / group), `handle` (unique per instance), `display_name`, `summary`, `avatar_media_id`, `ap_id` (URI), `inbox_uri`, `outbox_uri`, `public_key`, `private_key_ref` (encrypted), `is_local`, `instance_id` (for remote actors later), `approx_location_id`.
 
