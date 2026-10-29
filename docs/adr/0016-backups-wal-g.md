@@ -10,18 +10,22 @@ The project requires backup workflows that meet stated recovery targets (RPO: ho
 
 ## Decision
 
-- **Database:** WAL-G in a sidecar container:
-  - Continuous WAL archiving to off-site S3-compatible storage, with a 60-second `archive_timeout`
+- **Follow the 3-2-1 rule:** three copies of the data, on two different storage media, with one copy off-site.
+  1. **Live data:** the Postgres volume and the media storage.
+  2. **Local backup:** a dedicated backup volume, on a **different physical disk** from the database. A backup on the same disk doesn't count as a second medium. This copy gives the fastest restores.
+  3. **Off-site copy:** the local backup repository is synced off-site on a schedule (e.g. with rclone). The destination is still to be decided (a hosted object storage provider, or a server run by a trusted operator).
+- **Database:** WAL-G in a sidecar container, writing to the local backup volume (WAL-G's file storage):
+  - Continuous WAL archiving, with a 60-second `archive_timeout`
   - Nightly full base backups
-  - Retention of 7 daily + 4 weekly backups (proposed)
+  - Retention of 7 daily + 4 weekly backups (proposed; must stay consistent with the data retention periods in PLAN.md)
   - Point-in-time recovery
+- **Media:** processed media is copied to the local backup volume and included in the off-site sync.
 - **Encryption:** backups are encrypted client-side (libsodium key) before upload. The key is stored outside the server, and the operator is told to keep an offline copy.
-- **Credentials:** the backup bucket uses separate credentials that can write but not delete, and object lock or versioning where the provider supports it (protects against ransomware and a compromised server).
-- **Media:** provider replication or versioning on the `media` bucket ([0010](0010-s3-compatible-media-storage.md)).
-- **Monitoring:** the app's admin dashboard and health check report the time of the last successful WAL archive and base backup. An alert email is sent if either is overdue.
+- **Credentials:** the off-site destination uses separate credentials that can write but not delete, and object lock or versioning where the provider supports it (protects against ransomware and a compromised server).
+- **Monitoring:** the app's admin dashboard and health check report the time of the last successful WAL archive, base backup, and off-site sync. An alert email is sent if either is overdue.
 - **Restore drills:** a documented `restore` procedure and a scripted drill that restores into a throwaway compose stack and runs checks. Operators are asked to run it monthly; CI runs it on every release.
 
-**Proposed targets** (to confirm, see PLAN.md open questions): **RPO ≤ 5 minutes**, **RTO ≤ 4 hours**.
+**Recovery targets:** not decided yet (PLAN.md open questions). The design allows an RPO of about a minute for the local copy; the off-site RPO depends on the sync interval.
 
 ## Consequences
 

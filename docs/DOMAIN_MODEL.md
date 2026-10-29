@@ -83,6 +83,8 @@ draft ──▶ published ──▶ pending ──▶ adopted
 any ──▶ quarantined (moderation) ──▶ previous state | removed
 ```
 
+**ImportSource**: a shelter's connection to its shelter software. `id`, `org_actor_id`, `provider` (shelterluv / petpoint / csv), `credential_ref` (encrypted API key), `status` (active / failing / disabled), `last_sync_at`, `last_result` (counts and errors, no raw data), `mapping_version`. Imported animals set `Animal.external_ref` to `provider` + the vendor's animal ID. See [ADR 0020](adr/0020-shelter-software-imports.md).
+
 **Breed**: reference table with species, canonical name, and aliases (used for search normalization).
 
 ### Applications
@@ -100,7 +102,7 @@ submitted ──▶ under_review ──▶ approved ──▶ completed
     └──▶ withdrawn (by applicant, from any open state)
 ```
 
-Precise location and contact details are shown to the applicant only once the application is `approved`. Application data has a retention period (see the threat model).
+Precise location and contact details are shown to the applicant only once the application is `approved`. Application data has a retention period (see Data Retention in PLAN.md).
 
 ### Messaging and notifications
 
@@ -199,5 +201,4 @@ erDiagram
 
 - Should a person be able to rehome pets without ID verification, with stricter limits? (Persona 4 suggests no.)
 - Should species-specific attributes be fixed columns or a typed JSONB extension?
-- Which import format should come first: Petfinder, RescueGroups, or a CSV template? This will shape `external_ref` and field mapping.
-- Should application data be removed after a retention period (e.g. 12 months after closure)?
+- Retention periods per data type: see Data Retention in PLAN.md.

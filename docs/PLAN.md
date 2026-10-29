@@ -44,9 +44,9 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - **Frontend:** Vuetify SPA, plus server-rendered listing pages and OpenGraph metadata so listings rank in search and share well on social media
 - **Mobile:** the same Vuetify app packaged as native Android and iOS apps with Capacitor; push notifications through FCM (Android), APNs (iOS), and UnifiedPush (Android without Google services, and the F-Droid build); installable web app with web push as the iOS stopgap until the App Store account exists
 - **Database:** PostgreSQL with PostGIS (location search) and built-in full-text search (no separate search cluster)
-- **Media:** S3-compatible object storage (MinIO, or a hosted provider)
+- **Media:** S3-compatible object storage: MinIO for local development; a hosted provider or a maintained self-hosted server in production (see ADR 0010)
 - **Orchestration:** docker compose
-- **Backups:** WAL-G or pgBackRest to off-site storage, plus media bucket replication. Set explicit RPO/RTO targets (see Open Questions) and run scheduled restore drills.
+- **Backups:** 3-2-1 rule (three copies, two different storage media, one off-site). The first backup lives on a local backup volume on a separate disk; the off-site copy's location is still to be decided. WAL-G for the database; media is backed up alongside it. Scheduled restore drills (see ADR 0016).
 
 ## Safety Baseline
 
@@ -69,12 +69,31 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
   - If every leader is inactive, members may nominate a new owner, subject to instance-admin confirmation.
 - **Instance admins** don't run communities. They step in only for safety, legal, or ToS violations.
 
+## Data Retention (to be decided)
+
+Each kind of data needs its own retention period. This table lists the categories to decide and the questions involved. The starting proposals are only there to open the discussion.
+
+| Data | Contains | Starting proposal (for discussion) | Considerations |
+|------|----------|-----------------------------------|----------------|
+| Adoption applications and message threads | Household details, contact info, messages | Delete or anonymize 12 months after the application closes | Shelters may need records longer for their own reasons, but those belong in their shelter software, not here |
+| Adopter profiles | Household details | Kept while the account exists; deleted with the account | |
+| Verification evidence | ID and registration documents | Delete documents soon after the decision; keep only the record of what was checked | Least possible retention of identity documents |
+| Moderation reports and actions | Reporter and subject identities, content | Keep while relevant to repeat-offender decisions (e.g. 2 years), then anonymize | Needed for appeals and patterns of abuse |
+| Audit log | Who did what, when | Longest retention (e.g. 2–7 years) | Accountability; legal requests |
+| Server and access logs | IP addresses, user agents | Short (e.g. 14–30 days); store hashed IPs where possible | Security investigations vs. privacy |
+| Push device tokens, sessions | Device identifiers | Removed on sign-out, revocation, or inactivity | |
+| Deleted accounts and content | Tombstones only | Tombstones kept indefinitely, without personal data | Needed for federation consistency |
+| Backups | Everything | Backup retention sets how long "deleted" data actually survives | Retention periods above only fully apply once backups older than them expire |
+| CSAM matches | Evidence | As required by law | Legal preservation rules override everything else |
+
+To decide: the actual periods, whether they're fixed for all instances or set per instance within limits, and how deletion requests from users are handled.
+
 ## Phased Roadmap
 
 ### Phase 0: Discovery
-- Interview 2–3 shelters about their current software, workflows, and pain points
+- Shelter outreach (done, limited): local shelters use a mix of **Shelterluv** and **PetPoint**. Shelters were reluctant to give more time, so further interviews are unlikely; remaining assumptions get tested with a pilot shelter in Phase 2.
 - Personas ([draft](PERSONAS.md)), domain model ([draft](DOMAIN_MODEL.md)), threat model ([draft](THREAT_MODEL.md)), first ADRs (architecture decision records, [docs/adr](adr/README.md))
-- **Exit:** a validated MVP scope and an agreed domain model
+- **Exit:** an agreed MVP scope and domain model, with open assumptions listed for the Phase 2 pilot
 
 ### Phase 1: Foundation
 - Compose stack (Caddy, Go API, Postgres, object storage), CI
@@ -91,6 +110,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - Organization verification workflow
 - Pet listings (species, breed, age, fee, location, photos)
 - Search by breed, location radius, and fee range
+- Imports from Shelterluv (first) and PetPoint: read-only, animal fields only, no PII (see [ADR 0020](adr/0020-shelter-software-imports.md)); CSV template as a fallback
 - Adoption applications and status tracking
 - Messaging between applicants and the organization, attached to each application
 - Notifications: in-app, email, and push (application updates, new messages, saved-search matches)
@@ -143,11 +163,12 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 
 ## Open Questions
 
-- RPO/RTO targets (e.g. RPO ≤ 15 min, RTO ≤ 4 h?)
+- RPO/RTO targets: not decided yet
+- Off-site backup location: not decided yet (e.g. a hosted object storage provider, or a server run by another operator)
 - Legal review of animal sale and breeder rules in the launch jurisdiction(s)
-- Importing listings from shelter software (Petfinder, RescueGroups, Shelterluv, PetPoint)
+- Shelterluv and PetPoint: confirm API access, endpoints, and terms of use with each vendor before Phase 2
 - Identity verification provider and its cost
-- Who operates the first instance, and under which legal entity (a nonprofit structure fits the cost-recovery model)
+- Legal entity: the project lead currently runs the project and the first instance personally, with the aim of bringing in others and growing through federation. Until a legal entity (ideally a nonprofit) exists, liability is personal, and the Apple fee waiver and organization store accounts aren't available. Form it before the public app release (Phase 3), and before breeders or pet sitting are enabled.
 - How instances are funded before Phase 7. Donations could be turned on as early as Phase 2.
 - Target reserve size (e.g. 6–12 months of operating costs)
 - Platform insurance cost per instance, and whether it's affordable for small operators
@@ -155,5 +176,5 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - App publishing accounts: one organization account for the whole project, not one per instance (Apple $99/year, Google Play $25 once). Once the nonprofit entity exists (with a D-U-N-S number), apply for Apple's developer fee waiver for nonprofits; it requires a free app with no in-app purchases, so donations stay on the website. Check Apple's current waiver terms and eligible countries before applying.
 - Android distribution beyond Google Play: an F-Droid build (free; requires a fully open-source build with UnifiedPush instead of Google's push service)
 - AGPL and the Apple App Store: Apple's terms conflict with GPL-family licenses for code the publisher doesn't own. Options: a contributor agreement that lets the project publish contributions in app stores, or an explicit app-store exception for the mobile client. Get legal advice before accepting outside contributions to the client code.
-- Whether to offer a sign-in option for Meta later, based on what interviews show
+- Whether to offer a sign-in option for Meta later, based on pilot and user feedback
 - Push notification privacy: payloads pass through Google and Apple, so they carry no personal data (see ADR 0018).

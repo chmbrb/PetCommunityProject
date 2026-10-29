@@ -17,7 +17,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0007](0007-vuetify-spa-with-server-rendered-public-pages.md) | Vuetify SPA with server-rendered public pages | Accepted (SPA) / Proposed (SSR pages) |
 | [0008](0008-caddy-reverse-proxy.md) | Caddy as the reverse proxy | Proposed |
 | [0009](0009-docker-compose-deployment.md) | Docker Compose deployment | Accepted |
-| [0010](0010-s3-compatible-media-storage.md) | S3-compatible object storage for media | Proposed |
+| [0010](0010-s3-compatible-media-storage.md) | S3-compatible object storage for media | Accepted (MinIO for dev) / Proposed (production) |
 | [0011](0011-media-processing-pipeline.md) | Media processing pipeline | Proposed |
 | [0012](0012-activitypub-shaped-model-federation-deferred.md) | ActivityPub-shaped data model, federation deferred | Accepted |
 | [0013](0013-identifiers-uuidv7-stable-uris.md) | UUIDv7 identifiers and stable URIs | Proposed |
@@ -27,6 +27,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0017](0017-instance-feature-flags.md) | Instance-level feature flags | Accepted |
 | [0018](0018-mobile-apps-capacitor.md) | Native mobile apps with Capacitor | Proposed |
 | [0019](0019-sign-in-options-passkeys-sso.md) | Sign-in options: passkeys, magic links, and Google/Apple SSO | Accepted |
+| [0020](0020-shelter-software-imports.md) | Shelter software imports (Shelterluv and PetPoint) | Accepted (scope) / Proposed (sync) |
 
 ## Writing a new ADR
 

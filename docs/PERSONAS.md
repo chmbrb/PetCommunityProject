@@ -1,6 +1,6 @@
 # Personas
 
-Status: **Draft (Phase 0)**. These are working hypotheses to validate in shelter and user interviews, not findings. See [PLAN.md](PLAN.md) for phases and trust tiers.
+Status: **Draft (Phase 0)**. These are working hypotheses, not findings. Phase 0 outreach was limited (see below), so they'll be tested with a pilot shelter in Phase 2. See [PLAN.md](PLAN.md) for phases and trust tiers.
 
 Each persona lists the phase in which it becomes relevant. Personas are written as roles rather than named individuals.
 
@@ -14,7 +14,7 @@ A staff member at a small-to-mid municipal or nonprofit shelter. They manage 20â
 - **Goals:** get animals adopted faster, attract adopters who are a good fit, spend less time answering the same questions, keep the shelter's public reputation intact.
 - **Frustrations:** re-entering the same animal on several sites, applications arriving by email/phone/paper in different formats, scammers re-posting their animals with fake contact details, harassment after a declined application.
 - **Needs from the platform:**
-  - Bulk or imported listings (from shelter software or Petfinder/RescueGroups) rather than manual entry
+  - Imported listings from their shelter software (Shelterluv or PetPoint) rather than manual entry
   - Structured applications with status tracking and a shared view for staff
   - Multiple staff accounts under one organization, with roles
   - A verification badge adopters recognize
@@ -121,7 +121,17 @@ Runs an instance, often for a shelter network, county, or region. They may be te
 | Stalker / harasser | Uses photos, location, or applications to locate people | EXIF stripping, approximate locations, private application data, blocking |
 | Spammer / malware distributor | Malicious links or files | Image-only uploads with re-encoding, link reputation checks, rate limits, new-account restrictions |
 
-## Phase 0 interview guide
+## Phase 0 findings
+
+Outreach to local shelters (2026-10) produced one finding: **they use a mix of Shelterluv and PetPoint**. Even that much was a noticeable imposition on staff time, so further interviews are unlikely.
+
+What this means:
+
+- It supports the coordinator persona's core need: shelters won't re-enter data, so imports are essential ([ADR 0020](adr/0020-shelter-software-imports.md)).
+- It also suggests shelter staff have very little spare time. Onboarding has to be close to effortless: paste an API key, review the imported animals, publish.
+- All other assumptions in this document remain untested. The interview guide below is kept for the Phase 2 pilot shelter and for adopters, who are easier to reach.
+
+## Interview guide (for the Phase 2 pilot)
 
 **Shelters and rescues (target: 2â€“3 interviews)**
 1. Walk me through what happens from intake to adoption. Where does the time go?

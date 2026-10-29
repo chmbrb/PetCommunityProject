@@ -24,7 +24,7 @@ Many people, especially prospective adopters, give up when asked to create yet a
 | Password | On | For people who prefer it; rules from [0014](0014-authentication-sessions-mfa.md) |
 | Google | On (main instance), per-instance flag | Standard OpenID Connect |
 | Apple | Main instance (web) and iOS app once the App Store account exists; per-instance flag | Optional for other instances: only operators who pay for their own Apple Developer account can offer it on the web |
-| Meta | **Not offered** | Revisit only if Phase 0 interviews show real demand |
+| Meta | **Not offered** | Revisit only if pilot or user feedback shows real demand |
 
 **Implementation:**
 

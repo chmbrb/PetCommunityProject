@@ -71,6 +71,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | A7 | Brigading or harassment of a shelter after a declined application | M | M | Rate limits on new accounts; per-org block lists; moderators can lock comments; reviews of orgs deferred or moderated | 2–3 |
 | A8 | Spam and bot accounts | H | M | Email verification; new-account limits (no links or listings at first); rate limits; optional proof-of-work or CAPTCHA on signup | 1 |
 | A9 | Stale listings mislead adopters | H | L | Listings expire unless refreshed; imports sync status | 2 |
+| A10 | Shelter software imports bring in PII (finder, surrendering owner, adopter, or staff details; contact info in descriptions) | M | H | Read-only imports with allow-list field mapping; person records and internal notes discarded before storage or logging; free text scanned for contact details and held for shelter review ([ADR 0020](adr/0020-shelter-software-imports.md)) | 2 |
 
 ### Privacy
 
@@ -79,7 +80,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | P1 | EXIF GPS in photos reveals a home location | H | H | Re-encode every image and strip all metadata server-side; never serve originals | 1 |
 | P2 | Precise location revealed by search queries (e.g. narrowing distances from several points to triangulate) | M | H | Search and display use only the snapped `public_point`; round distances; rate-limit search | 2 |
 | P3 | Application data seen by the wrong parties | M | H | Strict authorization (applicant + the listing org's members only); profile snapshot per application; access by admins is audited | 2 |
-| P4 | Excessive data retention | M | M | Retention policy (proposed: applications deleted or anonymized 12 months after closure); account deletion removes PII and leaves tombstones | 2 |
+| P4 | Excessive data retention | M | M | Retention periods per data type (see Data Retention in PLAN.md, still to be decided); account deletion removes PII and leaves tombstones; backup retention kept in line with them | 2 |
 | P5 | Federated content can't be recalled | — | M | (Phase 5) Clear user notice; private data never federates; send `Delete` on removal | 5 |
 | P6 | Reporter identity exposed to the person reported | M | H | Reports are anonymous to the subject by default | 2 |
 | P7 | Google or Apple learn when users sign in to the platform | H | L | Disclosed in the privacy policy; minimal scopes (`openid email`); no provider SDK tracking; passkeys offered as the provider-independent default | 2 |
@@ -102,6 +103,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | I1 | SSRF through link previews or (later) federation fetches | M | H | Outbound fetches go through one hardened client: block private/internal IP ranges, re-check after DNS resolution, size and time limits, no redirects to internal addresses | 1 (5) |
 | I2 | Secrets leaked in a repo, image, or logs | M | H | Secrets from env or files, never committed; secret scanning in CI; PII redacted in logs | 1 |
 | I3 | Backup theft | L | H | Backups encrypted before upload; separate credentials with write-only/append-only permission where possible; restricted access | 1 |
+| I4 | Theft of shelters' import API keys | L | H | Encrypted at rest, used only by the import worker, never shown again after entry; shelters can revoke them; read-only keys where the vendor offers them | 2 |
 | D1 | DoS or resource exhaustion | M | M | Caddy and API rate limits; request size limits; image decompression-bomb limits (max pixels); job queue concurrency caps | 1 |
 | E1 | Privilege escalation through role management | L | H | Only owners/admins grant roles; role changes are audited; elevated roles require MFA | 1 |
 
@@ -162,6 +164,6 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 
 - Confirm legal obligations for CSAM reporting and data protection (GDPR/CCPA etc.) in the launch jurisdiction.
 - Choose a hash-matching provider or program, and check eligibility for a small nonprofit.
-- Decide the retention periods for applications, reports, and audit logs.
-- Ask shelters in interviews how they have been impersonated, so A2/A3 mitigations are based on real cases.
+- Decide the retention periods per data type (PLAN.md, Data Retention).
+- Ask the Phase 2 pilot shelter how they have been impersonated, so A2/A3 mitigations are based on real cases.
 - Write an incident response runbook (account compromise, data breach, CSAM, scam wave).

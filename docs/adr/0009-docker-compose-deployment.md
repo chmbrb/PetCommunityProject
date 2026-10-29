@@ -18,8 +18,8 @@ Ship a `compose.yaml` as the supported deployment, with these services:
 | `app` | project image, `serve` mode | API + server-rendered pages |
 | `worker` | same image, `worker` mode | Jobs, including media processing; memory-limited, read-only filesystem |
 | `db` | PostGIS image | Private network only |
-| `minio` | MinIO (optional) | Only if the operator doesn't use a hosted S3 provider |
-| `backup` | WAL-G sidecar | Continuous WAL archiving and scheduled base backups |
+| `minio` | MinIO (development only, in `compose.dev.yaml`) | Local S3-compatible storage for development. Not used in production (see [0010](0010-s3-compatible-media-storage.md)) |
+| `backup` | WAL-G sidecar | Continuous WAL archiving and base backups to the local backup volume, plus off-site sync ([0016](0016-backups-wal-g.md)) |
 
 Conventions:
 
