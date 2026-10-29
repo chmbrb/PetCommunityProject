@@ -69,7 +69,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 
 ### Phase 0: Discovery
 - Interview 2–3 shelters about their current software, workflows, and pain points
-- Personas ([draft](PERSONAS.md)), domain model ([draft](DOMAIN_MODEL.md)), threat model ([draft](THREAT_MODEL.md)), first ADRs (architecture decision records)
+- Personas ([draft](PERSONAS.md)), domain model ([draft](DOMAIN_MODEL.md)), threat model ([draft](THREAT_MODEL.md)), first ADRs (architecture decision records, [docs/adr](adr/README.md))
 - **Exit:** a validated MVP scope and an agreed domain model
 
 ### Phase 1: Foundation
