@@ -26,7 +26,9 @@ Postgres stores metadata only (`MediaAsset`). Integration tests run against MinI
 
 ## Consequences
 
-- Cheap, durable storage, separate from database backups. Media backup is handled by provider replication or versioning.
+- Cheap, durable storage, separate from database backups. Media isn't part of the backup process ([0016](0016-backups-wal-g.md)); the hosted provider's durability covers hardware loss.
+- Durability doesn't protect against deletion. Enable the provider's object versioning or soft-delete (with a short expiry, e.g. 30 days) on the `media` bucket, so files deleted by mistake, by a bug, or with stolen app credentials can be recovered. This is a bucket setting, not a separate backup.
+- The app's storage credentials can't change bucket versioning or lifecycle settings.
 - Raw uploads are never publicly reachable.
 - Another credential to manage, and egress costs depend on the provider. Recommend providers with free or cheap egress.
 

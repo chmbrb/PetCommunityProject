@@ -46,7 +46,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - **Database:** PostgreSQL with PostGIS (location search) and built-in full-text search (no separate search cluster)
 - **Media:** S3-compatible object storage: MinIO for local development; a hosted provider or a maintained self-hosted server in production (see ADR 0010)
 - **Orchestration:** docker compose
-- **Backups:** 3-2-1 rule (three copies, two different storage media, one off-site). The first backup lives on a local backup volume on a separate disk; the off-site copy's location is still to be decided. WAL-G for the database; media is backed up alongside it. Scheduled restore drills (see ADR 0016).
+- **Backups:** 3-2-1 rule (three copies, two different storage media, one off-site). The first backup lives on a local backup volume on a separate disk; the off-site copy's location is still to be decided. WAL-G for the database. Media isn't included: in production it lives in a hosted bucket, and MinIO in local development needs no backups. Scheduled restore drills (see ADR 0016).
 
 ## Safety Baseline
 
