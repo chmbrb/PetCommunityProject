@@ -20,7 +20,9 @@ Internet ──▶ Caddy (TLS, rate limits) ──▶ Go API ──▶ Postgres
 4. API → outbound internet: email, link previews, later federation fetches (**SSRF risk**)
 5. Instance → off-site backup storage
 6. Admin and moderator UI ↔ privileged API routes
-7. *(Phase 5)* Instance ↔ remote instances
+7. Mobile app ↔ API (bearer tokens, any instance chosen by the user)
+8. API → push providers (FCM, APNs), which see notification metadata
+9. *(Phase 5)* Instance ↔ remote instances
 
 ## Assets
 
@@ -116,6 +118,17 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | O3 | Backup fails silently → data loss | M | H | Monitoring and alerts on backups; scheduled restore drills; RPO/RTO targets set and tested | 1 |
 | O4 | Instance operator misconfiguration | H | M | Secure defaults; startup self-checks (TLS, secrets set, backups configured); hardening guide | 1 |
 | O5 | Insider misuse of admin access to private data | L | H | Least privilege; break-glass access with a reason field; audit log reviewed by a second person | 1 |
+
+### Mobile apps, messaging, and push (Phases 1–3)
+
+| # | Threat | L | I | Mitigations | Phase |
+|---|--------|---|---|-------------|-------|
+| M1 | Stolen or leaked mobile bearer token | M | H | Tokens in Keychain / Android Keystore; revocable per device; "signed-in devices" page; rotation on sensitive actions; MFA step-up still required for privileged actions | 1 |
+| M2 | Personal data exposed through push notifications (lock screen, Google/Apple servers) | M | M | Payloads carry only a type and ID; generic lock-screen text by default; per-type opt-in | 2 |
+| M3 | Scams and harassment through messages (fake "shelter" asking for deposits, abuse after a declined application) | H | H | MVP threads exist only on applications, between the applicant and the listing's verified org; report and block on every message; scam-phrase and payment-link detection with warnings; moderators can lock threads | 2 |
+| M4 | Fake instance or phishing via the app's instance picker | M | M | Default instance pre-selected; show instance name, domain, and rules before sign-in; warn on instances not on a curated list | 1 |
+| M5 | Malicious or impersonating app in the stores using the project's name | L | M | Publish only under the project's organization developer account; link official store pages from every instance; report impersonating apps | 3 |
+| M6 | Lost-pet push alerts used to track someone's location or spam an area | M | M | Alerts use approximate locations only; rate limits per account; only ID-verified users can trigger area alerts | 3 |
 
 ### Federation (Phase 5)
 

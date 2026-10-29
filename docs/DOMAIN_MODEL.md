@@ -23,6 +23,7 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 | Animals & Listings | Animal records, listings, search | 2 |
 | Applications | Adopter profiles, applications, status | 2 |
 | Communities | Groups, membership, posts, governance | 3 |
+| Messaging & Notifications | Application message threads, notifications, push devices | 2 |
 | Moderation | Reports, cases, actions, appeals | 2 |
 | Audit | Append-only log of privileged actions | 1 |
 | Federation | Delivery, remote actors, instance policy | 5 |
@@ -99,6 +100,20 @@ submitted ──▶ under_review ──▶ approved ──▶ completed
 
 Precise location and contact details are shown to the applicant only once the application is `approved`. Application data has a retention period (see the threat model).
 
+### Messaging and notifications
+
+**MessageThread**: `id`, `application_id` (MVP: every thread belongs to an application), `participants` (the applicant and the listing org), `status` (open / closed / locked by moderation), `created_at`.
+
+**Message**: `id`, `thread_id`, `author_account_id`, `body`, `media_ids`, `created_at`, `edited_at`, `status` (visible / removed). Messages can be reported, and moderators can see a reported message with its surrounding context. Messages are not federated and not end-to-end encrypted in the MVP.
+
+**Notification**: `id`, `account_id`, `type` (application_update / new_message / saved_search_match / lost_pet_nearby / moderation_notice …), `subject_type`, `subject_id`, `read_at`, `created_at`.
+
+**NotificationPreference**: `account_id`, `type`, `channels` (in_app / email / push), quiet hours.
+
+**Device**: `id`, `account_id`, `session_id`, `platform` (android / ios / web), `push_provider` (fcm / apns / unifiedpush / webpush), `push_token` (encrypted), `app_version`, `last_seen_at`. Removed when the session is revoked or the provider reports the token as invalid.
+
+Push payloads contain only `type` and `subject_id`; the app fetches content through the API.
+
 ### Communities (Phase 3)
 
 **Community**: a group Actor plus `rules`, `visibility` (public / members-only), `join_policy` (open / approval), `home_location_id` (optional).
@@ -169,7 +184,7 @@ erDiagram
 | Report | `Flag` | Forwarded to the remote instance on request |
 | Delete | `Delete` → `Tombstone` | |
 
-**Not federated by default:** applications, adopter profiles, verification evidence, moderation internals, sitter listings (Phase 7), and breeder listings unless policy allows (Phase 6).
+**Not federated by default:** applications, message threads, devices and notifications, adopter profiles, verification evidence, moderation internals, sitter listings (Phase 7), and breeder listings unless policy allows (Phase 6).
 
 ## Later-phase sketches
 
