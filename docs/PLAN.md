@@ -1,6 +1,6 @@
 # Plan
 
-This document records project decisions and the phased roadmap.
+This document records project decisions and the phased roadmap. For the project's vision, see the [README](../README.md).
 
 ## Decisions
 
