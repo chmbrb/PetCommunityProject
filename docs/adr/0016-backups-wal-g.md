@@ -1,6 +1,6 @@
 # 0016. Backups with WAL-G
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** PLAN.md (Stack: Backups; Open Questions: RPO/RTO), [0004](0004-postgresql-primary-datastore.md), [0009](0009-docker-compose-deployment.md), [0010](0010-s3-compatible-media-storage.md), THREAT_MODEL.md I3, O3
 

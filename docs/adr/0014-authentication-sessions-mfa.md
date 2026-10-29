@@ -1,6 +1,6 @@
 # 0014. Authentication: server-side sessions and MFA
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** THREAT_MODEL.md S1, S2, T4, E1, M1; PERSONAS.md (Account taker); [0018](0018-mobile-apps-capacitor.md), [0019](0019-sign-in-options-passkeys-sso.md)
 

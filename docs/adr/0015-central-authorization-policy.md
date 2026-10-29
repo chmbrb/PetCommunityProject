@@ -1,6 +1,6 @@
 # 0015. Central authorization policy layer
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** THREAT_MODEL.md T1, E1, P3; PLAN.md (Trust tiers, Governance)
 

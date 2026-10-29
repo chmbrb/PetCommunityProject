@@ -1,6 +1,6 @@
 # 0008. Caddy as the reverse proxy
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** PLAN.md (Stack), [0009](0009-docker-compose-deployment.md), THREAT_MODEL.md D1
 

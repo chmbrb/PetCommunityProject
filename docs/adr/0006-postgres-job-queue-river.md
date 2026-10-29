@@ -1,6 +1,6 @@
 # 0006. Postgres-backed job queue (River)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** [0004](0004-postgresql-primary-datastore.md), [0011](0011-media-processing-pipeline.md), THREAT_MODEL.md D1
 

@@ -1,6 +1,6 @@
 # 0010. S3-compatible object storage for media
 
-- **Status:** Accepted (MinIO for local development) / Proposed (production self-hosted option)
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** [0009](0009-docker-compose-deployment.md), [0011](0011-media-processing-pipeline.md), [0016](0016-backups-wal-g.md)
 

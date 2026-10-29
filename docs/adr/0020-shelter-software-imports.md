@@ -1,6 +1,6 @@
 # 0020. Shelter software imports (Shelterluv and PetPoint)
 
-- **Status:** Accepted (scope and PII rules) / Proposed (sync details)
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** PLAN.md (Phase 0 findings, Phase 2), DOMAIN_MODEL.md (Animal, Listing, ImportSource), [0006](0006-postgres-job-queue-river.md), [0011](0011-media-processing-pipeline.md), THREAT_MODEL.md A9, A10, I4
 

@@ -1,6 +1,6 @@
 # 0007. Vuetify SPA with server-rendered public pages
 
-- **Status:** Accepted (Vuetify SPA) / Proposed (server-rendered public pages)
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** PLAN.md (Stack), [0003](0003-go-backend.md), [0018](0018-mobile-apps-capacitor.md) (the same SPA packaged as mobile apps), THREAT_MODEL.md T3
 

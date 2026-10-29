@@ -1,6 +1,6 @@
 # 0013. UUIDv7 identifiers and stable URIs
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** [0012](0012-activitypub-shaped-model-federation-deferred.md), DOMAIN_MODEL.md, THREAT_MODEL.md T1
 

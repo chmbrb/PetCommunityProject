@@ -1,6 +1,6 @@
 # 0005. Data access with sqlc, pgx, and goose
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** [0004](0004-postgresql-primary-datastore.md), THREAT_MODEL.md T2
 

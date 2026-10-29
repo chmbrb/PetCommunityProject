@@ -1,6 +1,6 @@
 # 0018. Native mobile apps with Capacitor
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
 - **Related:** PLAN.md decision #8, Phases 1–3; [0007](0007-vuetify-spa-with-server-rendered-public-pages.md), [0012](0012-activitypub-shaped-model-federation-deferred.md), [0014](0014-authentication-sessions-mfa.md); THREAT_MODEL.md M1–M5
 
