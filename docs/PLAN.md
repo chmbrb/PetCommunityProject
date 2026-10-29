@@ -12,6 +12,7 @@ This document records project decisions and the phased roadmap. See [DESCRIPTION
 | 4 | **Planning lives in `docs/PLAN.md`; `docs/DESCRIPTION.md` stays the original vision.** | Keeps the vision and the decisions separate. |
 | 5 | **Monetization is cost recovery, not profit.** Revenue should only cover what an instance needs to run and keep running: hosting, backups, moderation, maintenance, insurance, and a reserve. | Profit incentives work against trust and reward listing volume. Instances should be self-sufficient without becoming commercial operations. |
 | 6 | **Pet sitting uses a directory model, is opt-in per instance (off by default), and charges no booking fees.** Sitters are independent operators who carry their own insurance. | Nonprofit status protects directors and volunteers but not the organization or its reserve. Not controlling the work, not taking a cut of bookings, and requiring sitters to be insured keep the platform out of the transaction. Opt-in lets each operator enable sitting only after securing its own insurance and legal sign-off. |
+| 7 | **The project is licensed under AGPLv3.** | Anyone who runs a modified version as a network service must share its source with users. That keeps every instance's improvements available to the whole community, which is the norm for fediverse software. |
 
 ## Principles
 
@@ -68,7 +69,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 
 ### Phase 0: Discovery
 - Interview 2–3 shelters about their current software, workflows, and pain points
-- Personas, domain model, threat model, first ADRs (architecture decision records)
+- Personas ([draft](PERSONAS.md)), domain model ([draft](DOMAIN_MODEL.md)), threat model ([draft](THREAT_MODEL.md)), first ADRs (architecture decision records)
 - **Exit:** a validated MVP scope and an agreed domain model
 
 ### Phase 1: Foundation
@@ -132,7 +133,6 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - Legal review of animal sale and breeder rules in the launch jurisdiction(s)
 - Importing listings from shelter software (Petfinder, RescueGroups, Shelterluv, PetPoint)
 - Identity verification provider and its cost
-- Project license (e.g. AGPL, as is common for fediverse software)
 - Who operates the first instance, and under which legal entity (a nonprofit structure fits the cost-recovery model)
 - How instances are funded before Phase 7. Donations could be turned on as early as Phase 2.
 - Target reserve size (e.g. 6–12 months of operating costs)
