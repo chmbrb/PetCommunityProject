@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-29
-- **Related:** DESCRIPTION.md (Stack), PLAN.md (Principles: lean)
+- **Related:** PLAN.md (Stack, Principles: lean)
 
 ## Context
 

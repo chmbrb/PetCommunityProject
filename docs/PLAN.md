@@ -1,6 +1,6 @@
 # Plan
 
-This document records project decisions and the phased roadmap. See [DESCRIPTION.md](DESCRIPTION.md) for the original vision.
+This document records project decisions and the phased roadmap.
 
 ## Decisions
 
@@ -9,7 +9,7 @@ This document records project decisions and the phased roadmap. See [DESCRIPTION
 | 1 | **MVP focuses on adoption through verified shelters.** | Shelters bring the listings and the users, they're easy to verify, and they carry the least liability. Fostering and sitting come later. |
 | 2 | **Data model is ActivityPub-shaped from day one; federation is turned on in a later phase.** | Get moderation and trust working on a single instance first. Modeling users, orgs, and groups as AP actors makes federating later an addition rather than a rewrite. |
 | 3 | **Verified breeders are allowed, but deferred to a late phase (Phase 6, right before pet sitting and monetization).** Until then, only shelter adoption and individual rehoming fees are allowed. | Breeders meet real demand, but they carry the highest fraud and regulatory risk. Deferring them lets moderation, trust tiers, and federation mature first. When breeders arrive, they need identity and licensing checks, listing caps, and verification that can be revoked. |
-| 4 | **Planning lives in `docs/PLAN.md`; `docs/DESCRIPTION.md` stays the original vision.** | Keeps the vision and the decisions separate. |
+| 4 | **Planning and product decisions live in `docs/PLAN.md`; technical decisions live in `docs/adr/`.** | One place for scope and roadmap, with the reasoning behind technical choices kept alongside. |
 | 5 | **Monetization is cost recovery, not profit.** Revenue should only cover what an instance needs to run and keep running: hosting, backups, moderation, maintenance, insurance, and a reserve. | Profit incentives work against trust and reward listing volume. Instances should be self-sufficient without becoming commercial operations. |
 | 6 | **Pet sitting uses a directory model, is opt-in per instance (off by default), and charges no booking fees.** Sitters are independent operators who carry their own insurance. | Nonprofit status protects directors and volunteers but not the organization or its reserve. Not controlling the work, not taking a cut of bookings, and requiring sitters to be insured keep the platform out of the transaction. Opt-in lets each operator enable sitting only after securing its own insurance and legal sign-off. |
 | 7 | **The project is licensed under AGPLv3.** | Anyone who runs a modified version as a network service must share its source with users. That keeps every instance's improvements available to the whole community, which is the norm for fediverse software. |

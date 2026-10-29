@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-29
-- **Related:** DESCRIPTION.md (Stack), PERSONAS.md (Instance operator), [0016](0016-backups-wal-g.md)
+- **Related:** PLAN.md (Stack), PERSONAS.md (Instance operator), [0016](0016-backups-wal-g.md)
 
 ## Context
 

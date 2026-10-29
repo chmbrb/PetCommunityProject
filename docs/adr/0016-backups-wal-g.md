@@ -2,11 +2,11 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-29
-- **Related:** DESCRIPTION.md (RTO/RPO), [0004](0004-postgresql-primary-datastore.md), [0009](0009-docker-compose-deployment.md), [0010](0010-s3-compatible-media-storage.md), THREAT_MODEL.md I3, O3
+- **Related:** PLAN.md (Stack: Backups; Open Questions: RPO/RTO), [0004](0004-postgresql-primary-datastore.md), [0009](0009-docker-compose-deployment.md), [0010](0010-s3-compatible-media-storage.md), THREAT_MODEL.md I3, O3
 
 ## Context
 
-The description requires backup workflows that meet stated recovery targets (RPO: how much data can be lost; RTO: how long recovery can take). Backups contain every piece of private data, so they're also a breach risk.
+The project requires backup workflows that meet stated recovery targets (RPO: how much data can be lost; RTO: how long recovery can take). Backups contain every piece of private data, so they're also a breach risk.
 
 ## Decision
 

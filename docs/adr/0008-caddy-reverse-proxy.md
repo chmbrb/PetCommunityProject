@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-29
-- **Related:** DESCRIPTION.md (Stack: "served by a proxy"), [0009](0009-docker-compose-deployment.md), THREAT_MODEL.md D1
+- **Related:** PLAN.md (Stack), [0009](0009-docker-compose-deployment.md), THREAT_MODEL.md D1
 
 ## Context
 
