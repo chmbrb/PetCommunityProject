@@ -25,6 +25,26 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SourceURL != DefaultSourceURL {
 		t.Errorf("SourceURL = %q, want %q", cfg.SourceURL, DefaultSourceURL)
 	}
+	if cfg.WebAuthnRPID != "localhost" || len(cfg.WebAuthnOrigins) != 2 {
+		t.Errorf("WebAuthn defaults = %q %v, want localhost with two dev origins", cfg.WebAuthnRPID, cfg.WebAuthnOrigins)
+	}
+}
+
+func TestWebAuthnProductionDefaults(t *testing.T) {
+	cfg, err := Load(env(map[string]string{
+		"PC_ENV":             "production",
+		"PC_INSTANCE_DOMAIN": "pets.example.org",
+		"PC_DATABASE_URL":    "postgres://app:s3cret@db/app",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WebAuthnRPID != "pets.example.org" {
+		t.Errorf("WebAuthnRPID = %q", cfg.WebAuthnRPID)
+	}
+	if len(cfg.WebAuthnOrigins) != 1 || cfg.WebAuthnOrigins[0] != "https://pets.example.org" {
+		t.Errorf("WebAuthnOrigins = %v", cfg.WebAuthnOrigins)
+	}
 }
 
 func TestLoadValidation(t *testing.T) {
@@ -61,6 +81,16 @@ func TestLoadValidation(t *testing.T) {
 				"PC_DATABASE_URL":    "postgres://app:" + DevDatabasePassword + "@db/app",
 			},
 			wantErr: "development password",
+		},
+		{
+			name: "insecure passkey origin in production",
+			env: map[string]string{
+				"PC_ENV":              "production",
+				"PC_INSTANCE_DOMAIN":  "pets.example.org",
+				"PC_DATABASE_URL":     "postgres://app:s3cret@db/app",
+				"PC_WEBAUTHN_ORIGINS": "http://pets.example.org",
+			},
+			wantErr: "PC_WEBAUTHN_ORIGINS",
 		},
 		{
 			name: "valid production",

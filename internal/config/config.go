@@ -34,6 +34,12 @@ type Config struct {
 	InstanceName   string
 	InstanceDomain string
 	SourceURL      string
+
+	// WebAuthnRPID is the passkey relying party ID: the domain passkeys are bound to.
+	// It can't change without invalidating every registered passkey.
+	WebAuthnRPID string
+	// WebAuthnOrigins are the exact origins (scheme://host[:port]) allowed to use passkeys.
+	WebAuthnOrigins []string
 }
 
 // Load reads configuration using getenv (normally os.Getenv) and validates it.
@@ -45,6 +51,13 @@ func Load(getenv func(string) string) (Config, error) {
 		InstanceName:   valueOr(getenv("PC_INSTANCE_NAME"), "PetCommunityProject"),
 		InstanceDomain: getenv("PC_INSTANCE_DOMAIN"),
 		SourceURL:      valueOr(getenv("PC_SOURCE_URL"), DefaultSourceURL),
+	}
+	cfg.WebAuthnRPID, cfg.WebAuthnOrigins = webAuthnDefaults(cfg.Env, cfg.InstanceDomain)
+	if v := getenv("PC_WEBAUTHN_RP_ID"); v != "" {
+		cfg.WebAuthnRPID = v
+	}
+	if v := getenv("PC_WEBAUTHN_ORIGINS"); v != "" {
+		cfg.WebAuthnOrigins = splitList(v)
 	}
 	return cfg, cfg.validate()
 }
@@ -66,6 +79,19 @@ func (c Config) validate() error {
 		errs = append(errs, errors.New("PC_SOURCE_URL must be an https URL"))
 	}
 
+	if c.WebAuthnRPID == "" {
+		errs = append(errs, errors.New("PC_WEBAUTHN_RP_ID is required (defaults to PC_INSTANCE_DOMAIN)"))
+	}
+	if len(c.WebAuthnOrigins) == 0 {
+		errs = append(errs, errors.New("PC_WEBAUTHN_ORIGINS is required"))
+	}
+	for _, o := range c.WebAuthnOrigins {
+		u, err := url.Parse(o)
+		if err != nil || u.Host == "" || u.Path != "" || (c.Env == Production && u.Scheme != "https") {
+			errs = append(errs, fmt.Errorf("PC_WEBAUTHN_ORIGINS: %q must be an origin like https://example.org", o))
+		}
+	}
+
 	if c.Env == Production {
 		if c.InstanceDomain == "" {
 			errs = append(errs, errors.New("PC_INSTANCE_DOMAIN is required in production"))
@@ -76,6 +102,28 @@ func (c Config) validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// webAuthnDefaults derives passkey settings: the instance domain in production, and
+// the API and Vite dev server on localhost in development.
+func webAuthnDefaults(env Environment, domain string) (rpID string, origins []string) {
+	if env == Production {
+		if domain == "" {
+			return "", nil
+		}
+		return domain, []string{"https://" + domain}
+	}
+	return "localhost", []string{"http://localhost:5173", "http://localhost:8080"}
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func valueOr(v, fallback string) string {

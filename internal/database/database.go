@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver for goose
 	"github.com/pressly/goose/v3"
@@ -48,6 +49,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // Ping reports whether the database is reachable.
 func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
+}
+
+// InTx runs fn in a transaction, committing if it returns nil and rolling back otherwise.
+func (s *Store) InTx(ctx context.Context, fn func(q *store.Queries) error) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return fn(s.WithTx(tx))
+	})
 }
 
 // MigrationResult describes one applied migration.

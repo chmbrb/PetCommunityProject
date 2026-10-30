@@ -20,6 +20,12 @@ make web         # in another terminal: web app on http://localhost:5173
 
 Open http://localhost:5173. The page should say **Connected**. The Vite dev server proxies `/api` to the Go API.
 
+### Passkeys in development
+
+Passkeys work on `http://localhost` because browsers treat localhost as a secure context. Use `localhost`, not `127.0.0.1`: passkeys are bound to the relying party ID, which defaults to `localhost` in development (`PC_WEBAUTHN_RP_ID`, with allowed origins in `PC_WEBAUTHN_ORIGINS`). In production both default to the instance domain.
+
+To try sign-up without a real authenticator, use Chrome DevTools → More tools → WebAuthn, and enable a virtual authenticator with resident key and user verification support. The Go integration tests use a virtual authenticator too (`internal/server/auth_integration_test.go`).
+
 `make help` lists every target.
 
 ## Repository layout

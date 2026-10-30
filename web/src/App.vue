@@ -1,9 +1,18 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script setup lang="ts">
-import { mdiPaw } from '@mdi/js'
+import { mdiAccountCircle, mdiPaw } from '@mdi/js'
+import { useRouter } from 'vue-router'
 import { useInstance } from './useInstance'
+import { useSession } from './useSession'
 
+const router = useRouter()
 const { instance } = useInstance()
+const { me, loaded, signOut } = useSession()
+
+async function onSignOut() {
+  await signOut()
+  await router.push({ name: 'home' })
+}
 </script>
 
 <template>
@@ -18,7 +27,49 @@ const { instance } = useInstance()
           class="ms-2"
         />
       </template>
-      <v-app-bar-title>{{ instance?.name ?? 'PetCommunityProject' }}</v-app-bar-title>
+      <v-app-bar-title>
+        <router-link
+          to="/"
+          class="app-title"
+        >
+          {{ instance?.name ?? 'PetCommunityProject' }}
+        </router-link>
+      </v-app-bar-title>
+
+      <template
+        v-if="loaded"
+        #append
+      >
+        <v-menu v-if="me">
+          <template #activator="{ props }">
+            <v-btn
+              v-bind="props"
+              :prepend-icon="mdiAccountCircle"
+              variant="text"
+            >
+              {{ me.actor.display_name }}
+            </v-btn>
+          </template>
+          <v-list density="compact">
+            <v-list-item
+              :subtitle="'@' + me.actor.handle"
+              :title="me.actor.display_name"
+            />
+            <v-divider />
+            <v-list-item
+              title="Sign out"
+              @click="onSignOut"
+            />
+          </v-list>
+        </v-menu>
+        <v-btn
+          v-else
+          :to="{ name: 'signin' }"
+          variant="text"
+        >
+          Sign in
+        </v-btn>
+      </template>
     </v-app-bar>
 
     <v-main>
@@ -37,3 +88,10 @@ const { instance } = useInstance()
     </v-footer>
   </v-app>
 </template>
+
+<style scoped>
+.app-title {
+  color: inherit;
+  text-decoration: none;
+}
+</style>

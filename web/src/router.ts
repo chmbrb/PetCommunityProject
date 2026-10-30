@@ -6,6 +6,8 @@ export default createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    { path: '/signup', name: 'signup', component: () => import('./views/SignUpView.vue') },
+    { path: '/signin', name: 'signin', component: () => import('./views/SignInView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') },
   ],
 })

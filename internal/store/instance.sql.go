@@ -39,3 +39,17 @@ func (q *Queries) ListFeatureFlags(ctx context.Context) ([]ListFeatureFlagsRow, 
 	}
 	return items, nil
 }
+
+const setFeatureFlag = `-- name: SetFeatureFlag :exec
+UPDATE instance_feature_flags SET enabled = $2, updated_at = now() WHERE flag = $1
+`
+
+type SetFeatureFlagParams struct {
+	Flag    string
+	Enabled bool
+}
+
+func (q *Queries) SetFeatureFlag(ctx context.Context, arg SetFeatureFlagParams) error {
+	_, err := q.db.Exec(ctx, setFeatureFlag, arg.Flag, arg.Enabled)
+	return err
+}

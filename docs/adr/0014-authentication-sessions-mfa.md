@@ -12,8 +12,8 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 
 - **Sign-in methods:** passkeys (primary), email magic links, passwords, and Google/Apple SSO. See [0019](0019-sign-in-options-passkeys-sso.md). Every method ends in the session model below.
 - **Passwords** (optional): argon2id hashing; minimum length 12; rejected if found in breached-password lists (k-anonymity range check or a bundled list); login rate limits and temporary lockouts.
-- **Sessions:** opaque random tokens stored hashed in Postgres; sent as `HttpOnly; Secure; SameSite=Lax` cookies; rotated on login and privilege change; all sessions revoked on password change. No JWTs for browser sessions.
-- **CSRF:** SameSite cookies plus a CSRF token on every state-changing request.
+- **Sessions:** opaque random 256-bit tokens, stored only as a SHA-256 hash in Postgres; sent as `HttpOnly; Secure; SameSite=Lax` cookies named `__Host-pc_session` (production); a new session is issued on every sign-in; all sessions revoked on password change. Web sessions last 30 days, mobile sessions 180 days. No JWTs for browser sessions.
+- **CSRF:** SameSite cookies plus Go's `http.CrossOriginProtection` (standard library since Go 1.25), which rejects cross-origin state-changing requests using the browser's `Sec-Fetch-Site` and `Origin` headers. This replaces the CSRF tokens originally planned: it gives the same protection without tokens to manage. The native apps' origins are trusted, since they use bearer tokens.
 - **Mobile apps:** sign-in returns an opaque bearer token (same session table, marked as a mobile session with a device name) stored in Keychain / Android Keystore. Tokens are long-lived but revocable, rotate on use of sensitive actions, and are listed in the user's "signed-in devices" page. Bearer-token requests don't need CSRF tokens. Biometric unlock can protect the app locally but doesn't replace MFA.
 - **MFA:** passkeys/WebAuthn and TOTP, with one-time recovery codes.
   - **Required** for members of verified organizations, community moderators and owners, and instance admins, including people who sign in with Google or Apple.

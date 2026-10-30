@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
 	"github.com/chmbrb/PetCommunityProject/internal/server"
@@ -101,9 +102,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	st := database.NewStore(pool)
+	authSvc, err := auth.New(cfg, st, logger)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(cfg, database.NewStore(pool), logger),
+		Handler:           server.New(cfg, st, authSvc, logger),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
