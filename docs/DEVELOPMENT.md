@@ -5,7 +5,7 @@ How to run PetCommunityProject locally. For why things are built this way, see t
 ## Prerequisites
 
 - Go 1.26+
-- Node.js 24+ with pnpm (`corepack enable` installs the version pinned in `web/package.json`)
+- Node.js 24 LTS with pnpm, at the version pinned in `web/package.json` (`packageManager`). Install it with `npm install -g pnpm@<version>`.
 - Docker with Compose, or Podman with a Docker-compatible socket (see [Podman](#podman))
 - For the mobile apps: Android Studio (Android), or Xcode on macOS (iOS)
 
@@ -50,6 +50,14 @@ Open http://localhost:5173. The page should say **Connected**. The Vite dev serv
 | Reset the development database | `make dev-reset && make dev-up && make migrate` |
 
 CI (`.github/workflows/ci.yml`) runs the same checks, plus golangci-lint, an Android debug build, and the container image builds.
+
+## Upgrading runtimes
+
+Dependabot proposes patch and minor updates. Major runtime upgrades are deliberate and skipped by Dependabot:
+
+- **Go:** raise the `toolchain` line in both `go.mod` and `tools/go.mod` (CI installs that exact version). The vulnerability scan fails when the toolchain has known standard-library vulnerabilities, which is the usual signal to bump it.
+- **Node.js:** stay on an LTS major. Change the Dockerfile base image, the CI `node-version`, `engines` in `web/package.json`, and the `@types/node` major together.
+- **Postgres:** a major upgrade needs a data migration (`pg_upgrade` or dump and restore). Plan it separately.
 
 ## Conventions
 
