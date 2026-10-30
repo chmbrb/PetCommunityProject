@@ -21,6 +21,7 @@ The project requires backup workflows that meet stated recovery targets (RPO: ho
   - Point-in-time recovery
 - **Media is not backed up by this process.** In production, media lives in a hosted object storage bucket, which already stores data durably ([0010](0010-s3-compatible-media-storage.md)). MinIO is only used for local development and needs no backups. Operators who self-host object storage in production are responsible for backing it up themselves.
 - **Encryption:** backups are encrypted client-side (libsodium key) before upload. The key is stored outside the server, and the operator is told to keep an offline copy.
+- **Instance secret:** `PC_SECRET_KEY` (which encrypts actors' private keys, ADR 0012) isn't in the database, so it isn't in backups. Operators keep an offline copy alongside the backup encryption key; a restore needs both.
 - **Credentials:** the off-site destination uses separate credentials that can write but not delete, and object lock or versioning where the provider supports it (protects against ransomware and a compromised server).
 - **Monitoring:** the app's admin dashboard and health check report the time of the last successful WAL archive, base backup, and off-site sync. An alert email is sent if either is overdue.
 - **Restore drills:** a documented `restore` procedure and a scripted drill that restores into a throwaway compose stack and runs checks. Operators are asked to run it monthly; CI runs it on every release.

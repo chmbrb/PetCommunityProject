@@ -40,7 +40,7 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 **AuthIdentity**: one sign-in method attached to an Account. `id`, `account_id`, `kind` (passkey / password / magic_link / oidc), `provider` (google / apple / other OIDC issuer; null for local methods), `subject` (provider's stable user ID; unique per provider), `email_at_link`, `credential_ref` (passkey public key etc.), `created_at`, `last_used_at`. An account must keep at least one. OIDC identities are matched by `provider` + `subject`, never by email.
 
-**Actor**: the public identity. `id`, `type` (person / organization / group), `handle` (unique per instance), `display_name`, `summary`, `avatar_media_id`, `ap_id` (URI), `inbox_uri`, `outbox_uri`, `public_key`, `private_key_ref` (encrypted), `is_local`, `instance_id` (for remote actors later), `approx_location_id`. For local actors, `ap_id`, `inbox_uri`, and `outbox_uri` are derived from the instance domain and the ID rather than stored; they're stored only for remote actors (Phase 5).
+**Actor**: the public identity. `id`, `type` (person / organization / group), `handle` (unique per instance), `display_name`, `summary`, `avatar_media_id`, `ap_id` (URI), `inbox_uri`, `outbox_uri`, `public_key_pem`, `private_key_enc` (encrypted; see ADR 0012), `private_key_kid`, `keys_created_at`, `is_local`, `instance_id` (for remote actors later), `approx_location_id`. For local actors, `ap_id`, `inbox_uri`, and `outbox_uri` are derived from the instance domain and the ID rather than stored; they're stored only for remote actors (Phase 5).
 
 - A person Actor belongs to exactly one Account.
 - An organization Actor is managed by Accounts through **OrgMembership**.

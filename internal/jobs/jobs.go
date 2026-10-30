@@ -29,10 +29,12 @@ func NewInserter(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client[pgx.Tx]
 }
 
 // NewWorker returns a client that runs every job type, for the worker process.
-func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, auth.NewEmailWorker(emailer))
 	river.AddWorker(workers, &CleanupWorker{db: db, logger: logger})
+	river.AddWorker(workers, &ActorKeysWorker{keys: keys})
+	river.AddWorker(workers, &BackfillActorKeysWorker{keys: keys, logger: logger})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger:  logger,
@@ -44,6 +46,9 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, lo
 		PeriodicJobs: []*river.PeriodicJob{
 			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
 				func() (river.JobArgs, *river.InsertOpts) { return CleanupJob{}, nil },
+				&river.PeriodicJobOpts{RunOnStart: true}),
+			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) { return BackfillActorKeysJob{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),
 		},
 	})

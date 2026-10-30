@@ -112,12 +112,20 @@ make local-up      # builds images, creates local certificates, starts everythin
 ```
 
 - App: https://localhost:8443. Caddy uses its own local certificate, so the browser warns once.
-- Mail: http://localhost:8025.
+- Mail: http://localhost:8026 (the development stack's Mailpit uses 8025, so both can run at once).
 - `make local-logs` follows the logs; `make local-down` stops; `make local-reset` also deletes the data.
 
 Production mode refuses unencrypted SMTP, so Mailpit speaks STARTTLS with a certificate from a throwaway local certificate authority (`deploy/local/make-certs.sh`, run by `make local-certs`; gitignored, valid 90 days). The worker trusts that authority through `PC_SMTP_CA_FILE`. Certificate verification stays on: without the file, the worker refuses Mailpit's certificate. Real providers don't need `PC_SMTP_CA_FILE`.
 
 The stack uses its own Compose project (`petcommunity-local`), so its data never mixes with a real deployment on the same machine.
+
+### Instance secret
+
+`PC_SECRET_KEY` (32 random bytes, base64) encrypts actors' private signing keys (ADR 0012). Generate it once with `openssl rand -base64 32` and put it in `.env`. Only the worker gets it; the API never needs it.
+
+**Keep an offline copy**, alongside your backup encryption key. It isn't in the database or its backups. Losing it means the instance's actors can no longer sign federated activity; changing it means existing keys can't be decrypted (rotation isn't supported yet).
+
+In development the worker uses a fixed, public key when `PC_SECRET_KEY` isn't set; production refuses that key.
 
 ### Email
 

@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chmbrb/PetCommunityProject/internal/actorkeys"
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
@@ -153,6 +154,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 }
 
 func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// Checked before connecting, so a missing secret fails fast with a clear message.
+	if err := cfg.RequireSecretKey(); err != nil {
+		return err
+	}
+	sealer, err := actorkeys.NewSealer(cfg.SecretKey)
+	if err != nil {
+		return err
+	}
+
 	pool, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -165,7 +175,8 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	emailer := auth.NewEmailer(cfg, st, sender, logger)
-	client, err := jobs.NewWorker(pool, st, emailer, logger)
+	keys := jobs.NewKeyMaker(st, sealer, logger)
+	client, err := jobs.NewWorker(pool, st, emailer, keys, logger)
 	if err != nil {
 		return err
 	}

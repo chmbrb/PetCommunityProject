@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Account struct {
@@ -22,21 +21,25 @@ type Account struct {
 }
 
 type Actor struct {
-	ID          uuid.UUID
-	Type        string
-	Handle      string
-	DisplayName string
-	Summary     string
-	AccountID   uuid.NullUUID
-	CreatedAt   time.Time
+	ID            uuid.UUID
+	Type          string
+	Handle        string
+	DisplayName   string
+	Summary       string
+	AccountID     uuid.NullUUID
+	CreatedAt     time.Time
+	PublicKeyPem  *string
+	PrivateKeyEnc []byte
+	PrivateKeyKid *string
+	KeysCreatedAt *time.Time
 }
 
 type AuthIdentity struct {
 	ID         uuid.UUID
 	AccountID  uuid.UUID
 	Kind       string
-	Provider   pgtype.Text
-	Subject    pgtype.Text
+	Provider   *string
+	Subject    *string
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }

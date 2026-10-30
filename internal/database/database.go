@@ -75,9 +75,35 @@ type MigrationStatus struct {
 	Applied bool
 }
 
+// migrationLockID is the Postgres advisory lock held while migrating. It's an
+// arbitrary constant ("pcmigrat" in ASCII) shared by every process of this app.
+const migrationLockID int64 = 0x70636d6967726174
+
 // Migrate applies all pending migrations: the project's own, then the job queue's
-// (River manages its own schema).
+// (River manages its own schema). Concurrent callers, such as two migrate containers
+// or parallel test packages, take turns: each waits for an advisory lock, then finds
+// the migrations already applied.
 func Migrate(ctx context.Context, databaseURL string) ([]MigrationResult, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("open database pool: %w", err)
+	}
+	defer pool.Close()
+
+	// A session-level lock on a dedicated connection, held until Migrate returns.
+	lockConn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire migration lock connection: %w", err)
+	}
+	defer lockConn.Release()
+	if _, err := lockConn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		return nil, fmt.Errorf("wait for migration lock: %w", err)
+	}
+	defer func() {
+		// A fresh context, so the lock is released even if ctx was cancelled.
+		_, _ = lockConn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", migrationLockID)
+	}()
+
 	provider, db, err := newProvider(databaseURL)
 	if err != nil {
 		return nil, err
@@ -93,11 +119,6 @@ func Migrate(ctx context.Context, databaseURL string) ([]MigrationResult, error)
 		applied = append(applied, MigrationResult{Version: r.Source.Version, Source: r.Source.Path})
 	}
 
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		return applied, fmt.Errorf("open database pool: %w", err)
-	}
-	defer pool.Close()
 	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
 	if err != nil {
 		return applied, fmt.Errorf("load job queue migrations: %w", err)
