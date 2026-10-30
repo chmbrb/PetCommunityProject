@@ -32,6 +32,15 @@ type AuthService interface {
 	FinishSignInLink(ctx context.Context, token string, client auth.Client) (auth.Session, error)
 	VerifyEmail(ctx context.Context, token string) error
 	ResendVerification(ctx context.Context, accountID uuid.UUID) error
+
+	ListPasskeys(ctx context.Context, accountID uuid.UUID) ([]auth.PasskeyInfo, error)
+	BeginAddPasskey(ctx context.Context, p auth.Principal) (uuid.UUID, *protocol.PublicKeyCredentialCreationOptions, error)
+	FinishAddPasskey(ctx context.Context, p auth.Principal, challengeID uuid.UUID, credential []byte, name string) (auth.PasskeyInfo, error)
+	RenamePasskey(ctx context.Context, p auth.Principal, id uuid.UUID, name string) error
+	RemovePasskey(ctx context.Context, p auth.Principal, id uuid.UUID) error
+	ListSessions(ctx context.Context, p auth.Principal) ([]auth.SessionInfo, error)
+	RevokeSession(ctx context.Context, p auth.Principal, id uuid.UUID) error
+	RevokeOtherSessions(ctx context.Context, p auth.Principal) (int64, error)
 }
 
 type principalKey struct{}
@@ -55,6 +64,9 @@ func (s *Server) sessionCookieName() string {
 // continue anonymously; handlers decide whether that's allowed.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sessions started by this request record which browser or app they belong to.
+		r = r.WithContext(auth.WithUserAgent(r.Context(), r.UserAgent()))
+
 		token, fromCookie := "", false
 		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 			token = strings.TrimPrefix(h, "Bearer ")
@@ -184,6 +196,13 @@ func parseClient(w http.ResponseWriter, v string) (auth.Client, bool) {
 // startSession responds to a successful sign-in: a cookie for web clients, the token
 // in the body for mobile clients.
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, status int, sess auth.Session, client auth.Client) {
+	// Signing in again replaces this client's previous session rather than leaving it
+	// active alongside the new one.
+	if old, ok := principalFrom(r.Context()); ok {
+		if err := s.auth.SignOut(r.Context(), old.SessionID); err != nil {
+			s.logger.WarnContext(r.Context(), "revoke replaced session", "error", err)
+		}
+	}
 	me, err := s.auth.Me(r.Context(), sess.AccountID)
 	if err != nil {
 		s.writeAuthError(w, r, err)
@@ -283,6 +302,12 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusBadRequest, "link_invalid", err.Error())
 	case errors.Is(err, auth.ErrTooManyEmails):
 		writeError(w, http.StatusTooManyRequests, "too_many_emails", err.Error())
+	case errors.Is(err, auth.ErrReauthRequired):
+		writeError(w, http.StatusForbidden, "reauthentication_required", err.Error())
+	case errors.Is(err, auth.ErrLastPasskey):
+		writeError(w, http.StatusConflict, "last_passkey", err.Error())
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 	default:
 		s.logger.ErrorContext(r.Context(), "auth request failed", "error", err, "path", r.URL.Path)
 		writeError(w, http.StatusInternalServerError, "internal", "internal error")

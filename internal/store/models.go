@@ -75,6 +75,7 @@ type Session struct {
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
+	UserAgent  string
 }
 
 type WebauthnChallenge struct {
@@ -83,4 +84,5 @@ type WebauthnChallenge struct {
 	Session   []byte
 	Signup    []byte
 	ExpiresAt time.Time
+	AccountID uuid.NullUUID
 }

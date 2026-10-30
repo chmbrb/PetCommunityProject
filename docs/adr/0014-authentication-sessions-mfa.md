@@ -18,9 +18,10 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 - **MFA:** passkeys/WebAuthn and TOTP, with one-time recovery codes.
   - **Required** for members of verified organizations, community moderators and owners, and instance admins, including people who sign in with Google or Apple.
   - Optional for everyone else.
-- **Alerts:** email on new-device login, MFA changes, and email changes.
+- **Alerts:** email on new-device login, MFA changes, and email changes. (Built so far: emails when a passkey is added or removed.)
 - **Email verification** before posting or applying.
-- **Step-up:** sensitive actions (role grants, verification decisions, data exports) require re-entering MFA within the last few minutes.
+- **Step-up:** sensitive actions (role grants, verification decisions, data exports) require re-entering MFA within the last few minutes. Built so far: adding or removing a passkey requires a sign-in within the last 15 minutes (`auth.ReauthWindow`); otherwise the person confirms by signing in again with a passkey, which replaces their session rather than adding one.
+- **Signed-in devices:** people can see their sessions (with a device label from the User-Agent, stored only as long as the session) and sign out any of them, or all but the current one.
 
 ## Consequences
 

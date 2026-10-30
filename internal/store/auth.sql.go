@@ -89,8 +89,8 @@ func (q *Queries) CreatePersonActor(ctx context.Context, arg CreatePersonActorPa
 }
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (id, token_hash, account_id, client, expires_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO sessions (id, token_hash, account_id, client, user_agent, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateSessionParams struct {
@@ -98,6 +98,7 @@ type CreateSessionParams struct {
 	TokenHash []byte
 	AccountID uuid.UUID
 	Client    string
+	UserAgent string
 	ExpiresAt time.Time
 }
 
@@ -107,14 +108,15 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.TokenHash,
 		arg.AccountID,
 		arg.Client,
+		arg.UserAgent,
 		arg.ExpiresAt,
 	)
 	return err
 }
 
 const createWebAuthnChallenge = `-- name: CreateWebAuthnChallenge :exec
-INSERT INTO webauthn_challenges (id, purpose, session, signup, expires_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO webauthn_challenges (id, purpose, session, signup, account_id, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateWebAuthnChallengeParams struct {
@@ -122,6 +124,7 @@ type CreateWebAuthnChallengeParams struct {
 	Purpose   string
 	Session   []byte
 	Signup    []byte
+	AccountID uuid.NullUUID
 	ExpiresAt time.Time
 }
 
@@ -131,6 +134,7 @@ func (q *Queries) CreateWebAuthnChallenge(ctx context.Context, arg CreateWebAuth
 		arg.Purpose,
 		arg.Session,
 		arg.Signup,
+		arg.AccountID,
 		arg.ExpiresAt,
 	)
 	return err
@@ -196,7 +200,7 @@ func (q *Queries) GetAccountByWebAuthnHandle(ctx context.Context, webauthnUserHa
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT s.id, s.account_id, s.client, s.last_seen_at, a.status AS account_status
+SELECT s.id, s.account_id, s.client, s.created_at, s.last_seen_at, a.status AS account_status
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id
 WHERE s.token_hash = $1
@@ -209,6 +213,7 @@ type GetActiveSessionRow struct {
 	ID            uuid.UUID
 	AccountID     uuid.UUID
 	Client        string
+	CreatedAt     time.Time
 	LastSeenAt    time.Time
 	AccountStatus string
 }
@@ -221,6 +226,7 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 		&i.ID,
 		&i.AccountID,
 		&i.Client,
+		&i.CreatedAt,
 		&i.LastSeenAt,
 		&i.AccountStatus,
 	)
@@ -316,7 +322,7 @@ func (q *Queries) RevokeSession(ctx context.Context, id uuid.UUID) error {
 const takeWebAuthnChallenge = `-- name: TakeWebAuthnChallenge :one
 DELETE FROM webauthn_challenges
 WHERE id = $1 AND purpose = $2 AND expires_at > now()
-RETURNING session, signup
+RETURNING session, signup, account_id
 `
 
 type TakeWebAuthnChallengeParams struct {
@@ -325,15 +331,16 @@ type TakeWebAuthnChallengeParams struct {
 }
 
 type TakeWebAuthnChallengeRow struct {
-	Session []byte
-	Signup  []byte
+	Session   []byte
+	Signup    []byte
+	AccountID uuid.NullUUID
 }
 
 // Deletes and returns an unexpired challenge, so each one can be used only once.
 func (q *Queries) TakeWebAuthnChallenge(ctx context.Context, arg TakeWebAuthnChallengeParams) (TakeWebAuthnChallengeRow, error) {
 	row := q.db.QueryRow(ctx, takeWebAuthnChallenge, arg.ID, arg.Purpose)
 	var i TakeWebAuthnChallengeRow
-	err := row.Scan(&i.Session, &i.Signup)
+	err := row.Scan(&i.Session, &i.Signup, &i.AccountID)
 	return i, err
 }
 

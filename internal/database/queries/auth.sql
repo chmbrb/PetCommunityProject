@@ -41,25 +41,25 @@ UPDATE passkey_credentials SET credential = $2 WHERE identity_id = $1;
 UPDATE auth_identities SET last_used_at = now() WHERE id = $1;
 
 -- name: CreateWebAuthnChallenge :exec
-INSERT INTO webauthn_challenges (id, purpose, session, signup, expires_at)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO webauthn_challenges (id, purpose, session, signup, account_id, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: TakeWebAuthnChallenge :one
 -- Deletes and returns an unexpired challenge, so each one can be used only once.
 DELETE FROM webauthn_challenges
 WHERE id = $1 AND purpose = $2 AND expires_at > now()
-RETURNING session, signup;
+RETURNING session, signup, account_id;
 
 -- name: DeleteExpiredWebAuthnChallenges :execrows
 DELETE FROM webauthn_challenges WHERE expires_at <= now();
 
 -- name: CreateSession :exec
-INSERT INTO sessions (id, token_hash, account_id, client, expires_at)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO sessions (id, token_hash, account_id, client, user_agent, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetActiveSession :one
 -- Returns the session and its account if the session is valid and the account may sign in.
-SELECT s.id, s.account_id, s.client, s.last_seen_at, a.status AS account_status
+SELECT s.id, s.account_id, s.client, s.created_at, s.last_seen_at, a.status AS account_status
 FROM sessions s
 JOIN accounts a ON a.id = s.account_id
 WHERE s.token_hash = $1

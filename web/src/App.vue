@@ -57,6 +57,10 @@ async function onSignOut() {
             />
             <v-divider />
             <v-list-item
+              :to="{ name: 'settings' }"
+              title="Settings"
+            />
+            <v-list-item
               title="Sign out"
               @click="onSignOut"
             />

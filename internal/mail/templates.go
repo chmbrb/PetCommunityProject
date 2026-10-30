@@ -25,6 +25,8 @@ type LinkEmail struct {
 	Link         string
 	// ExpiresIn describes how long the link works, e.g. "15 minutes".
 	ExpiresIn string
+	// Detail is extra context for notices, e.g. the passkey's name.
+	Detail string
 }
 
 // VerifyEmail asks the person to confirm their email address.
@@ -35,6 +37,16 @@ func VerifyEmail(to string, data LinkEmail) (Message, error) {
 // SignInLink sends a one-time sign-in link.
 func SignInLink(to string, data LinkEmail) (Message, error) {
 	return render(to, "Your sign-in link for "+data.InstanceName, "sign_in_link", data)
+}
+
+// PasskeyAdded tells the person a passkey was added, in case it wasn't them.
+func PasskeyAdded(to string, data LinkEmail) (Message, error) {
+	return render(to, "A passkey was added to your "+data.InstanceName+" account", "passkey_added", data)
+}
+
+// PasskeyRemoved tells the person a passkey was removed, in case it wasn't them.
+func PasskeyRemoved(to string, data LinkEmail) (Message, error) {
+	return render(to, "A passkey was removed from your "+data.InstanceName+" account", "passkey_removed", data)
 }
 
 func render(to, subject, name string, data LinkEmail) (Message, error) {

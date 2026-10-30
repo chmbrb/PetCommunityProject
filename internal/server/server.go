@@ -51,6 +51,14 @@ func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) 
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/v1/me", s.handleMe)
 	mux.HandleFunc("POST /api/v1/me/email/verification", s.handleResendVerification)
+	mux.HandleFunc("GET /api/v1/me/passkeys", s.handleListPasskeys)
+	mux.HandleFunc("POST /api/v1/me/passkeys/begin", s.handleAddPasskeyBegin)
+	mux.HandleFunc("POST /api/v1/me/passkeys/finish", s.handleAddPasskeyFinish)
+	mux.HandleFunc("PATCH /api/v1/me/passkeys/{id}", s.handleRenamePasskey)
+	mux.HandleFunc("DELETE /api/v1/me/passkeys/{id}", s.handleRemovePasskey)
+	mux.HandleFunc("GET /api/v1/me/sessions", s.handleListSessions)
+	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.handleRevokeSession)
+	mux.HandleFunc("POST /api/v1/me/sessions/revoke-others", s.handleRevokeOtherSessions)
 
 	return chain(mux,
 		s.requestID,

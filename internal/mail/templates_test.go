@@ -44,6 +44,33 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+func TestNotices(t *testing.T) {
+	data := LinkEmail{
+		InstanceName: "Eastside Pets", DisplayName: "Sam",
+		Link: "https://pets.example.org/settings", Detail: "Work laptop <b>",
+	}
+	for name, render := range map[string]func(string, LinkEmail) (Message, error){
+		"added": PasskeyAdded, "removed": PasskeyRemoved,
+	} {
+		t.Run(name, func(t *testing.T) {
+			msg, err := render("sam@example.org", data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(msg.Subject, name) {
+				t.Errorf("Subject %q doesn't say %q", msg.Subject, name)
+			}
+			if !strings.Contains(msg.Text, "Work laptop <b>") || !strings.Contains(msg.Text, data.Link) {
+				t.Errorf("text part:\n%s", msg.Text)
+			}
+			// The passkey name is user input.
+			if strings.Contains(msg.HTML, "<b>") || !strings.Contains(msg.HTML, "Work laptop &lt;b&gt;") {
+				t.Errorf("passkey name not escaped in HTML")
+			}
+		})
+	}
+}
+
 func TestRecorder(t *testing.T) {
 	var r Recorder
 	_ = r.Send(t.Context(), Message{To: "a@example.org"})

@@ -1,0 +1,7 @@
+Hi {{.DisplayName}},
+
+A passkey ({{.Detail}}) was just removed from your {{.InstanceName}} account.
+
+If this was you, there's nothing to do. If it wasn't, someone may have access to your account: sign in, check your passkeys, and sign out your other devices:
+
+{{.Link}}
