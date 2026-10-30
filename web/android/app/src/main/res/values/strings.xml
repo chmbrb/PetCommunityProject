@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PetCommunity</string>
+    <string name="title_activity_main">PetCommunity</string>
+    <string name="package_name">org.petcommunityproject.app</string>
+    <string name="custom_url_scheme">org.petcommunityproject.app</string>
+</resources>

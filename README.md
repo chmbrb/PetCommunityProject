@@ -2,7 +2,7 @@
 
 A federated, community-run platform that connects people and organizations around household pets: adopting, fostering, and pet sitting, with local communities built around shelters and rescues.
 
-> **Status:** planning (Phase 0). There's no code yet. See the [plan and roadmap](docs/PLAN.md).
+> **Status:** Phase 1 (foundation) in progress. The project skeleton runs, but there are no user-facing features yet. See the [plan and roadmap](docs/PLAN.md).
 
 ## Vision
 
@@ -37,6 +37,7 @@ Go backend · PostgreSQL (with PostGIS) · Vue 3 + Vuetify web app, packaged for
 
 ## Documentation
 
+- [Development guide](docs/DEVELOPMENT.md): running the project locally, repository layout, conventions
 - [Plan and roadmap](docs/PLAN.md): decisions, trust tiers, governance, data retention, open questions
 - [Personas](docs/PERSONAS.md): who the platform serves, and the bad actors it must withstand
 - [Domain model](docs/DOMAIN_MODEL.md): core entities and how they map to ActivityPub

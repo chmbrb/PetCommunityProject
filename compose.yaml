@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Production deployment (ADR 0009). PREVIEW: backups (ADR 0016) and media storage
+# (ADR 0010) are not wired in yet, so don't run a real instance on this until they are.
+#
+#   cp .env.example .env   # then fill in the values
+#   docker compose up -d --build
+name: petcommunity
+
+services:
+  caddy:
+    build:
+      context: .
+      target: web
+    image: petcommunity-web:local
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [edge]
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      target: app
+      args:
+        VERSION: ${PC_VERSION:-dev}
+    image: petcommunity-app:local
+    environment: &app-env
+      PC_ENV: production
+      PC_INSTANCE_NAME: ${PC_INSTANCE_NAME:?set PC_INSTANCE_NAME in .env}
+      PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
+      PC_SOURCE_URL: ${PC_SOURCE_URL:-https://github.com/chmbrb/PetCommunityProject}
+      PC_DATABASE_URL: postgres://petcommunity:${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}@db:5432/petcommunity
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [edge, backend]
+    restart: unless-stopped
+
+  # Applies database migrations before the app starts.
+  migrate:
+    image: petcommunity-app:local
+    command: ["migrate"]
+    environment: *app-env
+    read_only: true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+    restart: "no"
+
+  db:
+    image: docker.io/postgis/postgis:18-3.6
+    environment:
+      POSTGRES_USER: petcommunity
+      POSTGRES_PASSWORD: ${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}
+      POSTGRES_DB: petcommunity
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      # TCP check: during first-run initialization Postgres runs a temporary
+      # server on the Unix socket only, which would pass a socket check too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U petcommunity -d petcommunity"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  # The database is unreachable from Caddy and the internet.
+  backend:
+    internal: true
+
+volumes:
+  caddy-data:
+  caddy-config:
+  db-data:

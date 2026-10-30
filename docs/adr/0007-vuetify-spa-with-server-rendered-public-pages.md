@@ -10,7 +10,7 @@ Most of the app is interactive and behind login: dashboards, applications, moder
 
 ## Decision
 
-- **Interactive app:** Vue 3 + Vuetify 3 single-page app, built with Vite into static files and served by Caddy.
+- **Interactive app:** Vue 3 + Vuetify single-page app (Vuetify 4 at the time of scaffolding), built with Vite into static files and served by Caddy.
 - **Public pages:** Go renders a small set of public pages with `html/template`: listing detail, organization profile, community landing page, and lost/found posts. Each includes OpenGraph/Twitter card tags and JSON-LD structured data. These pages are lightweight and load the SPA for interactive actions (e.g. "Apply").
 - **User content:** Markdown is converted to sanitized HTML on the server (allow-list). The SPA never renders unsanitized HTML (`v-html` only on server-sanitized fields).
 
