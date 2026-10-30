@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
+import { ApiError, requestSignInLink } from '../api/client'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
@@ -12,6 +13,24 @@ const { signIn } = useSession()
 const supported = browserSupportsWebAuthn()
 const error = ref<string | null>(null)
 const busy = ref(false)
+
+const linkEmail = ref('')
+const linkError = ref<string | null>(null)
+const linkSent = ref(false)
+const linkBusy = ref(false)
+
+async function sendLink() {
+  linkError.value = null
+  linkBusy.value = true
+  try {
+    await requestSignInLink(linkEmail.value)
+    linkSent.value = true
+  } catch (err) {
+    linkError.value = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
+  } finally {
+    linkBusy.value = false
+  }
+}
 
 async function submit() {
   error.value = null
@@ -67,6 +86,47 @@ async function submit() {
     >
       Sign in with a passkey
     </v-btn>
+
+    <div class="d-flex align-center ga-3 my-8">
+      <v-divider />
+      <span class="text-body-2 text-medium-emphasis">or</span>
+      <v-divider />
+    </div>
+
+    <h2 class="text-h6 mb-2">
+      Get a sign-in link by email
+    </h2>
+    <v-alert
+      v-if="linkSent"
+      type="info"
+      variant="tonal"
+    >
+      If an account uses {{ linkEmail }}, we've sent it a sign-in link. The link works once,
+      for 15 minutes.
+    </v-alert>
+    <v-form
+      v-else
+      @submit.prevent="sendLink"
+    >
+      <v-text-field
+        v-model="linkEmail"
+        label="Email"
+        type="email"
+        autocomplete="email"
+        :error-messages="linkError ?? undefined"
+        :disabled="linkBusy"
+        required
+      />
+      <v-btn
+        type="submit"
+        variant="outlined"
+        size="large"
+        block
+        :loading="linkBusy"
+      >
+        Email me a sign-in link
+      </v-btn>
+    </v-form>
 
     <p class="text-body-2 mt-6">
       New here?

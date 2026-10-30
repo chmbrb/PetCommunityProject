@@ -4,6 +4,7 @@
 // every mode (ADR 0003):
 //
 //	petcommunity serve            run the HTTP API
+//	petcommunity worker           run background jobs (sending email, cleanup)
 //	petcommunity migrate [up]     apply pending database migrations
 //	petcommunity migrate status   list migrations and whether they are applied
 //	petcommunity version          print the build version
@@ -28,6 +29,8 @@ import (
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
+	"github.com/chmbrb/PetCommunityProject/internal/jobs"
+	"github.com/chmbrb/PetCommunityProject/internal/mail"
 	"github.com/chmbrb/PetCommunityProject/internal/server"
 	"github.com/chmbrb/PetCommunityProject/internal/version"
 )
@@ -36,6 +39,7 @@ const usage = `usage: petcommunity <command>
 
 commands:
   serve            run the HTTP API
+  worker           run background jobs (sending email, cleanup)
   migrate [up]     apply pending database migrations
   migrate status   list migrations and whether they are applied
   version          print the build version
@@ -75,6 +79,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	switch args[0] {
 	case "serve":
 		err = serve(ctx, cfg, logger)
+	case "worker":
+		err = work(ctx, cfg, logger)
 	case "migrate":
 		err = migrate(ctx, cfg, args[1:], stdout, logger)
 	default:
@@ -103,7 +109,11 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	defer pool.Close()
 
 	st := database.NewStore(pool)
-	authSvc, err := auth.New(cfg, st, logger)
+	queue, err := jobs.NewInserter(pool, logger)
+	if err != nil {
+		return err
+	}
+	authSvc, err := auth.New(cfg, st, queue, logger)
 	if err != nil {
 		return err
 	}
@@ -140,6 +150,32 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	pool, err := database.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	st := database.NewStore(pool)
+	emailer := auth.NewEmailer(cfg, st, mail.NewSMTPSender(cfg.Mail), logger)
+	client, err := jobs.NewWorker(pool, st, emailer, logger)
+	if err != nil {
+		return err
+	}
+	if err := client.Start(ctx); err != nil {
+		return fmt.Errorf("start worker: %w", err)
+	}
+	logger.Info("worker started", "version", version.Version, "smtp_host", cfg.Mail.Host)
+
+	<-ctx.Done()
+	logger.Info("worker stopping")
+	// Let running jobs finish; a fresh context because ctx is already cancelled.
+	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return client.Stop(stopCtx)
 }
 
 func migrate(ctx context.Context, cfg config.Config, args []string, stdout io.Writer, logger *slog.Logger) error {

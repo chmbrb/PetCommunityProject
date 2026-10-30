@@ -29,7 +29,8 @@ export class ApiError extends Error {
     message: string,
     readonly field?: string,
   ) {
-    super(message)
+    // API messages are lowercase sentence fragments; capitalize them for display.
+    super(message.charAt(0).toUpperCase() + message.slice(1))
     this.name = 'ApiError'
   }
 }
@@ -142,4 +143,22 @@ export function finishLogin(challengeId: string, credential: AuthenticationRespo
 
 export function logout() {
   return request<void>('POST', '/api/v1/auth/logout')
+}
+
+/** Emails a sign-in link if the address has an account. The answer is the same either way. */
+export function requestSignInLink(email: string) {
+  return request<{ status: string }>('POST', '/api/v1/auth/login/email/request', { email })
+}
+
+export function finishSignInLink(token: string) {
+  return request<Me>('POST', '/api/v1/auth/login/email/finish', { token })
+}
+
+export function verifyEmail(token: string) {
+  return request<void>('POST', '/api/v1/auth/email/verify', { token })
+}
+
+/** Sends another verification email to the signed-in account. */
+export function resendVerification() {
+  return request<{ status: string }>('POST', '/api/v1/me/email/verification')
 }

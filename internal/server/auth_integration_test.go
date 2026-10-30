@@ -17,24 +17,34 @@ import (
 	"testing"
 
 	"github.com/descope/virtualwebauthn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
+	"github.com/chmbrb/PetCommunityProject/internal/jobs"
+	"github.com/chmbrb/PetCommunityProject/internal/mail"
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
 const testOrigin = "http://localhost:5173"
 
-// authTestEnv runs the real server against the integration test database.
+// authTestEnv runs the real server against the integration test database. Queued
+// emails aren't sent; tests deliver them with deliverEmail, which records them in mail.
 type authTestEnv struct {
-	t     *testing.T
-	srv   *httptest.Server
-	store *database.Store
-	rp    virtualwebauthn.RelyingParty
+	t       *testing.T
+	srv     *httptest.Server
+	store   *database.Store
+	pool    *pgxpool.Pool
+	rp      virtualwebauthn.RelyingParty
+	emailer *auth.Emailer
+	mail    *mail.Recorder
 }
 
-func newAuthTestEnv(t *testing.T) *authTestEnv {
+// envOption adjusts the test configuration.
+type envOption func(*config.Config)
+
+func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 	t.Helper()
 	url := os.Getenv("PC_TEST_DATABASE_URL")
 	if url == "" {
@@ -56,19 +66,30 @@ func newAuthTestEnv(t *testing.T) *authTestEnv {
 		SourceURL:       config.DefaultSourceURL,
 		WebAuthnRPID:    "localhost",
 		WebAuthnOrigins: []string{testOrigin},
+		PublicURL:       testOrigin,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st := database.NewStore(pool)
-	authSvc, err := auth.New(cfg, st, logger)
+	queue, err := jobs.NewInserter(pool, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authSvc, err := auth.New(cfg, st, queue, logger)
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
 	srv := httptest.NewServer(New(cfg, st, authSvc, logger))
 	t.Cleanup(srv.Close)
 
+	recorder := &mail.Recorder{}
 	return &authTestEnv{
-		t: t, srv: srv, store: st,
-		rp: virtualwebauthn.RelyingParty{Name: "Test Instance", ID: "localhost", Origin: testOrigin},
+		t: t, srv: srv, store: st, pool: pool,
+		rp:      virtualwebauthn.RelyingParty{Name: "Test Instance", ID: "localhost", Origin: testOrigin},
+		emailer: auth.NewEmailer(cfg, st, recorder, logger),
+		mail:    recorder,
 	}
 }
 
@@ -118,6 +139,9 @@ func (e *authTestEnv) do(c *http.Client, method, path string, body any, headers 
 type passkey struct {
 	authenticator virtualwebauthn.Authenticator
 	credential    virtualwebauthn.Credential
+	// accountID and email identify the account the passkey was created for.
+	accountID string
+	email     string
 }
 
 // signUp registers a new account with a new passkey and returns the passkey.
@@ -147,6 +171,8 @@ func (e *authTestEnv) signUp(c *http.Client, handle string) *passkey {
 	if status != http.StatusCreated {
 		e.t.Fatalf("signup finish: status %d, body %v", status, me)
 	}
+	pk.accountID, _ = nested(me, "account", "id").(string)
+	pk.email, _ = nested(me, "account", "email").(string)
 
 	// The same challenge can't be used twice.
 	status, replay := e.do(c, "POST", "/api/v1/auth/signup/finish", map[string]any{

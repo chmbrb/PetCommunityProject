@@ -1,0 +1,4 @@
+{{template "layout_top" .}}<p style="margin:0 0 16px;font-size:16px;">Please confirm this is your email address for {{.InstanceName}}.</p>
+<p style="margin:24px 0;"><a href="{{.Link}}" style="display:inline-block;background:#2e7d6b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:16px;">Confirm email</a></p>
+<p style="margin:0;font-size:14px;color:#616161;">The link works for {{.ExpiresIn}}. If you didn't create an account, you can ignore this email.</p>
+{{template "layout_bottom" .}}

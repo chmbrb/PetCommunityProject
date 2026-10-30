@@ -41,6 +41,17 @@ type AuthIdentity struct {
 	LastUsedAt *time.Time
 }
 
+type EmailToken struct {
+	ID        uuid.UUID
+	TokenHash []byte
+	AccountID uuid.UUID
+	Purpose   string
+	Email     string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
 type InstanceFeatureFlag struct {
 	Flag      string
 	Enabled   bool

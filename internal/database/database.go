@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver for goose
 	"github.com/pressly/goose/v3"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
@@ -52,9 +54,11 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 // InTx runs fn in a transaction, committing if it returns nil and rolling back otherwise.
-func (s *Store) InTx(ctx context.Context, fn func(q *store.Queries) error) error {
+// fn gets the raw transaction too, so it can insert jobs in the same transaction
+// (ADR 0006).
+func (s *Store) InTx(ctx context.Context, fn func(tx pgx.Tx, q *store.Queries) error) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		return fn(s.WithTx(tx))
+		return fn(tx, s.WithTx(tx))
 	})
 }
 
@@ -71,7 +75,8 @@ type MigrationStatus struct {
 	Applied bool
 }
 
-// Migrate applies all pending migrations.
+// Migrate applies all pending migrations: the project's own, then the job queue's
+// (River manages its own schema).
 func Migrate(ctx context.Context, databaseURL string) ([]MigrationResult, error) {
 	provider, db, err := newProvider(databaseURL)
 	if err != nil {
@@ -86,6 +91,23 @@ func Migrate(ctx context.Context, databaseURL string) ([]MigrationResult, error)
 	applied := make([]MigrationResult, 0, len(results))
 	for _, r := range results {
 		applied = append(applied, MigrationResult{Version: r.Source.Version, Source: r.Source.Path})
+	}
+
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return applied, fmt.Errorf("open database pool: %w", err)
+	}
+	defer pool.Close()
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		return applied, fmt.Errorf("load job queue migrations: %w", err)
+	}
+	riverResult, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil)
+	if err != nil {
+		return applied, fmt.Errorf("apply job queue migrations: %w", err)
+	}
+	for _, v := range riverResult.Versions {
+		applied = append(applied, MigrationResult{Version: int64(v.Version), Source: fmt.Sprintf("river v%d", v.Version)})
 	}
 	return applied, nil
 }

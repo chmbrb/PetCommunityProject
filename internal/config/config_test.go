@@ -30,6 +30,53 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestMailDefaults(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mail.Host != "localhost" || cfg.Mail.Port != 1025 || cfg.Mail.Security != MailNone {
+		t.Errorf("development mail = %+v, want Mailpit on localhost:1025", cfg.Mail)
+	}
+	if cfg.PublicURL != "http://localhost:5173" {
+		t.Errorf("development PublicURL = %q", cfg.PublicURL)
+	}
+}
+
+func TestProductionMail(t *testing.T) {
+	prod := map[string]string{
+		"PC_ENV":             "production",
+		"PC_INSTANCE_DOMAIN": "pets.example.org",
+		"PC_DATABASE_URL":    "postgres://app:s3cret@db/app",
+	}
+	_, err := Load(env(prod))
+	for _, want := range []string{"PC_SMTP_HOST is required", "PC_MAIL_FROM is required"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("production without mail settings: err = %v, want %q", err, want)
+		}
+	}
+
+	prod["PC_SMTP_HOST"] = "smtp.example.com"
+	prod["PC_MAIL_FROM"] = "Pets <noreply@pets.example.org>"
+	cfg, err := Load(env(prod))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Mail.Port != 587 || cfg.Mail.Security != MailSTARTTLS || cfg.PublicURL != "https://pets.example.org" {
+		t.Errorf("production defaults: mail %+v, PublicURL %q", cfg.Mail, cfg.PublicURL)
+	}
+
+	prod["PC_SMTP_SECURITY"] = "none"
+	if _, err := Load(env(prod)); err == nil || !strings.Contains(err.Error(), "only allowed in development") {
+		t.Errorf("unencrypted SMTP in production: err = %v", err)
+	}
+	prod["PC_SMTP_SECURITY"] = "tls"
+	prod["PC_SMTP_PORT"] = "smtps"
+	if _, err := Load(env(prod)); err == nil || !strings.Contains(err.Error(), "PC_SMTP_PORT") {
+		t.Errorf("invalid port: err = %v", err)
+	}
+}
+
 func TestTrustProxy(t *testing.T) {
 	base := map[string]string{"PC_DATABASE_URL": "postgres://x"}
 	cfg, err := Load(env(base))
@@ -66,6 +113,8 @@ func TestProductionRequiresRateLimits(t *testing.T) {
 	cfg := Config{
 		Env: Production, DatabaseURL: "postgres://app:s3cret@db/app", InstanceDomain: "pets.example.org",
 		SourceURL: DefaultSourceURL, WebAuthnRPID: "pets.example.org", WebAuthnOrigins: []string{"https://pets.example.org"},
+		PublicURL: "https://pets.example.org",
+		Mail:      Mail{Host: "smtp.example.com", Port: 587, Security: MailSTARTTLS, From: "noreply@pets.example.org"},
 	}
 	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "rate limits") {
 		t.Fatalf("validate with no rate limits: err = %v", err)
@@ -81,6 +130,8 @@ func TestWebAuthnProductionDefaults(t *testing.T) {
 		"PC_ENV":             "production",
 		"PC_INSTANCE_DOMAIN": "pets.example.org",
 		"PC_DATABASE_URL":    "postgres://app:s3cret@db/app",
+		"PC_SMTP_HOST":       "smtp.example.com",
+		"PC_MAIL_FROM":       "noreply@pets.example.org",
 	}))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -144,6 +195,8 @@ func TestLoadValidation(t *testing.T) {
 				"PC_ENV":             "production",
 				"PC_INSTANCE_DOMAIN": "pets.example.org",
 				"PC_DATABASE_URL":    "postgres://app:s3cret@db/app",
+				"PC_SMTP_HOST":       "smtp.example.com",
+				"PC_MAIL_FROM":       "noreply@pets.example.org",
 			},
 		},
 	}

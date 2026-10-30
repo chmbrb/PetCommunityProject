@@ -6,6 +6,7 @@ import {
   beginSignup,
   fetchMe,
   finishLogin,
+  finishSignInLink,
   finishSignup,
   logout,
   type Me,
@@ -45,10 +46,20 @@ export function useSession() {
     me.value = await finishLogin(challenge_id, credential)
   }
 
+  /** Signs in with the token from a sign-in email. */
+  async function signInWithLink(token: string) {
+    me.value = await finishSignInLink(token)
+  }
+
+  /** Reloads the account, e.g. after verifying the email address. */
+  async function refresh() {
+    me.value = await fetchMe()
+  }
+
   async function signOut() {
     await logout()
     me.value = null
   }
 
-  return { me, loaded, signUp, signIn, signOut }
+  return { me, loaded, signUp, signIn, signInWithLink, refresh, signOut }
 }

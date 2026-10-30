@@ -51,6 +51,34 @@ type Config struct {
 	TrustProxy bool
 	// RateLimits apply per client IP (THREAT_MODEL.md A8, D1, S1).
 	RateLimits RateLimits
+
+	// PublicURL is the address people use to reach the web app, for links in email.
+	PublicURL string
+	// Mail is how the worker sends email.
+	Mail Mail
+}
+
+// MailSecurity is how the connection to the SMTP server is protected.
+type MailSecurity string
+
+const (
+	// MailSTARTTLS upgrades a plain connection with STARTTLS (usually port 587).
+	MailSTARTTLS MailSecurity = "starttls"
+	// MailTLS connects over TLS from the start (usually port 465).
+	MailTLS MailSecurity = "tls"
+	// MailNone sends unencrypted. Development only (Mailpit).
+	MailNone MailSecurity = "none"
+)
+
+// Mail configures sending through a transactional email provider's SMTP server.
+type Mail struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Security MailSecurity
+	// From is the sender, e.g. "Example Pet Community <noreply@pets.example.org>".
+	From string
 }
 
 // RateLimits groups the request rate limits. A policy with zero Burst is disabled.
@@ -62,6 +90,9 @@ type RateLimits struct {
 	// SignUp covers account creation, which also reveals whether an email is
 	// registered, so it's the strictest.
 	SignUp ratelimit.Policy
+	// EmailRecipient limits emails sent to any one address (sign-in links,
+	// verification), so nobody can flood someone else's inbox.
+	EmailRecipient ratelimit.Policy
 }
 
 // DefaultRateLimits are generous for people, including several staff at a shelter
@@ -71,6 +102,8 @@ func DefaultRateLimits() RateLimits {
 		API:    ratelimit.Policy{Burst: 100, Every: 100 * time.Millisecond}, // 10/s sustained
 		SignIn: ratelimit.Policy{Burst: 10, Every: 6 * time.Second},         // 10/min sustained
 		SignUp: ratelimit.Policy{Burst: 5, Every: 2 * time.Minute},          // 30/h sustained
+		// 3 at once, then 3/h sustained, per recipient address.
+		EmailRecipient: ratelimit.Policy{Burst: 3, Every: 20 * time.Minute},
 	}
 }
 
@@ -92,14 +125,29 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.WebAuthnOrigins = splitList(v)
 	}
 	cfg.RateLimits = DefaultRateLimits()
+	cfg.PublicURL = valueOr(getenv("PC_PUBLIC_URL"), publicURLDefault(cfg.Env, cfg.InstanceDomain))
+	cfg.Mail = mailDefaults(cfg.Env)
+	cfg.Mail.Host = valueOr(getenv("PC_SMTP_HOST"), cfg.Mail.Host)
+	cfg.Mail.Username = getenv("PC_SMTP_USERNAME")
+	cfg.Mail.Password = getenv("PC_SMTP_PASSWORD")
+	cfg.Mail.Security = MailSecurity(valueOr(getenv("PC_SMTP_SECURITY"), string(cfg.Mail.Security)))
+	cfg.Mail.From = valueOr(getenv("PC_MAIL_FROM"), cfg.Mail.From)
 
-	var trustErr error
+	var parseErrs []error
 	if v := getenv("PC_TRUST_PROXY"); v != "" {
-		if cfg.TrustProxy, trustErr = strconv.ParseBool(v); trustErr != nil {
-			trustErr = fmt.Errorf("PC_TRUST_PROXY must be true or false, got %q", v)
+		var err error
+		if cfg.TrustProxy, err = strconv.ParseBool(v); err != nil {
+			parseErrs = append(parseErrs, fmt.Errorf("PC_TRUST_PROXY must be true or false, got %q", v))
 		}
 	}
-	return cfg, errors.Join(trustErr, cfg.validate())
+	if v := getenv("PC_SMTP_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil || port < 1 || port > 65535 {
+			parseErrs = append(parseErrs, fmt.Errorf("PC_SMTP_PORT must be a port number, got %q", v))
+		}
+		cfg.Mail.Port = port
+	}
+	return cfg, errors.Join(errors.Join(parseErrs...), cfg.validate())
 }
 
 func (c Config) validate() error {
@@ -132,8 +180,29 @@ func (c Config) validate() error {
 		}
 	}
 
+	if u, err := url.Parse(c.PublicURL); err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || strings.TrimSuffix(u.Path, "/") != "" {
+		errs = append(errs, fmt.Errorf("PC_PUBLIC_URL must be a URL like https://pets.example.org, got %q", c.PublicURL))
+	}
+	switch c.Mail.Security {
+	case MailSTARTTLS, MailTLS, MailNone:
+	default:
+		errs = append(errs, fmt.Errorf("PC_SMTP_SECURITY must be starttls, tls, or none, got %q", c.Mail.Security))
+	}
+	if c.Mail.From == "" {
+		errs = append(errs, errors.New("PC_MAIL_FROM is required"))
+	}
+
 	if c.Env == Production {
-		if c.RateLimits.API.Disabled() || c.RateLimits.SignIn.Disabled() || c.RateLimits.SignUp.Disabled() {
+		if c.Mail.Host == "" {
+			errs = append(errs, errors.New("PC_SMTP_HOST is required in production (your email provider's SMTP server)"))
+		}
+		if c.Mail.Security == MailNone {
+			errs = append(errs, errors.New("PC_SMTP_SECURITY=none is only allowed in development"))
+		}
+		if !strings.HasPrefix(c.PublicURL, "https://") {
+			errs = append(errs, errors.New("PC_PUBLIC_URL must use https in production"))
+		}
+		if c.RateLimits.API.Disabled() || c.RateLimits.SignIn.Disabled() || c.RateLimits.SignUp.Disabled() || c.RateLimits.EmailRecipient.Disabled() {
 			errs = append(errs, errors.New("rate limits can't be disabled in production"))
 		}
 		if c.InstanceDomain == "" {
@@ -157,6 +226,32 @@ func webAuthnDefaults(env Environment, domain string) (rpID string, origins []st
 		return domain, []string{"https://" + domain}
 	}
 	return "localhost", []string{"http://localhost:5173", "http://localhost:8080"}
+}
+
+// publicURLDefault is the instance's site in production, and the Vite dev server in
+// development.
+func publicURLDefault(env Environment, domain string) string {
+	if env == Production && domain != "" {
+		return "https://" + domain
+	}
+	if env == Production {
+		return ""
+	}
+	return "http://localhost:5173"
+}
+
+// mailDefaults point development at Mailpit (compose.dev.yaml). In production the
+// operator sets their provider's SMTP server.
+func mailDefaults(env Environment) Mail {
+	if env == Production {
+		return Mail{Port: 587, Security: MailSTARTTLS}
+	}
+	return Mail{
+		Host:     "localhost",
+		Port:     1025,
+		Security: MailNone,
+		From:     "PetCommunityProject <noreply@localhost>",
+	}
 }
 
 func splitList(v string) []string {
