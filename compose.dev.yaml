@@ -49,6 +49,18 @@ services:
     command: ["mb", "--ignore-existing", "local/media", "local/quarantine"]
     restart: on-failure
 
+  # Makes processed images publicly readable, as a hosted provider's public bucket
+  # would be. The quarantine bucket stays private.
+  minio-policy:
+    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MC_HOST_local: http://petcommunity:dev-only-password@minio:9000
+    command: ["anonymous", "set", "download", "local/media"]
+    restart: on-failure
+
   # Catches all outgoing email in development. Web inbox: http://localhost:8025
   mailpit:
     image: docker.io/axllent/mailpit:v1.32.0@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498

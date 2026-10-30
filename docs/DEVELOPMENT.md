@@ -119,6 +119,14 @@ Production mode refuses unencrypted SMTP, so Mailpit speaks STARTTLS with a cert
 
 The stack uses its own Compose project (`petcommunity-local`), so its data never mixes with a real deployment on the same machine.
 
+### Photos and media storage
+
+Uploads go to a private quarantine bucket; the worker decodes and re-encodes them and publishes only the results to a public media bucket (ADR 0010, 0011, 0021). Configure both buckets in `.env` (`PC_S3_*`, `PC_MEDIA_URL`); see the comments there for bucket settings. Images are served from `PC_MEDIA_URL`: the provider's public bucket address or a custom domain, ideally not the app's own domain.
+
+The image codecs must use their memory-safe Go builds: always build with `-tags nodynamic`. The Makefile, Dockerfile, CI, and golangci-lint do this; when running `go` directly, use `GOFLAGS=-tags=nodynamic`. Without the tag, a machine with libwebp, libavif, or libheif development files installed would decode uploads with C code, and the worker refuses to start.
+
+No abuse-imagery scanning service is connected yet (ADR 0011), so only accounts with a confirmed email can upload. In development, MinIO serves images at http://localhost:9000/media/, and the local production stack serves them through Caddy at https://localhost:8443/media/.
+
 ### Instance secret
 
 `PC_SECRET_KEY` (32 random bytes, base64) encrypts actors' private signing keys (ADR 0012). Generate it once with `openssl rand -base64 32` and put it in `.env`. Only the worker gets it; the API never needs it.

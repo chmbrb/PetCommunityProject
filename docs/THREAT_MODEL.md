@@ -77,7 +77,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 
 | # | Threat | L | I | Mitigations | Phase |
 |---|--------|---|---|-------------|-------|
-| P1 | EXIF GPS in photos reveals a home location | H | H | Re-encode every image and strip all metadata server-side; never serve originals | 1 |
+| P1 | EXIF GPS in photos reveals a home location | H | H | Re-encode every image and strip all metadata server-side; never serve originals. Built: variants are encoded from decoded pixels only, and tests check that EXIF and a GPS marker never reach published files | 1 |
 | P2 | Precise location revealed by search queries (e.g. narrowing distances from several points to triangulate) | M | H | Search and display use only the snapped `public_point`; round distances; rate-limit search | 2 |
 | P3 | Application data seen by the wrong parties | M | H | Strict authorization (applicant + the listing org's members only); profile snapshot per application; access by admins is audited | 2 |
 | P4 | Excessive data retention | M | M | Retention periods per data type (see Data Retention in PLAN.md, still to be decided); account deletion removes PII and leaves tombstones; backup retention kept in line with them | 2 |
@@ -112,8 +112,8 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 
 | # | Threat | L | I | Mitigations | Phase |
 |---|--------|---|---|-------------|-------|
-| C1 | CSAM uploads | L | **Critical** | Hash matching (PDQ / PhotoDNA, via an industry hash-sharing program); quarantine without anyone viewing it; legally required reporting (e.g. NCMEC in the US); preserve evidence per legal requirements; operator runbook | 1 |
-| C2 | Malware via uploads (polyglot files, malicious SVG) | M | H | Allow only JPEG/PNG/WebP/AVIF, checked by content rather than extension; no SVG; decode and re-encode in a sandboxed worker; serve media from a separate domain with `Content-Disposition` and `nosniff` | 1 |
+| C1 | CSAM uploads | L | **Critical** | Hash matching (PDQ / PhotoDNA, via an industry hash-sharing program); quarantine without anyone viewing it; legally required reporting (e.g. NCMEC in the US); preserve evidence per legal requirements; operator runbook. Built: the pipeline has a pluggable scanner step that quarantines matches unpublished and keeps the original; **no provider is connected yet**, so uploads are limited to accounts with a confirmed email until one is | 1 |
+| C2 | Malware via uploads (polyglot files, malicious SVG) | M | H | Allow only JPEG/PNG/WebP/HEIC/AVIF, checked by content rather than extension; no SVG; pixel limit checked from the header before decoding; decode with memory-safe code only (ADR 0021) in the memory-limited worker; raw uploads stay in a private bucket and are deleted after processing; only re-encoded files are served, with `nosniff`, ideally from a separate domain | 1 |
 | C3 | Malicious links in posts | H | M | Link reputation checks (e.g. Safe Browsing); `rel="nofollow ugc noopener"`; new accounts can't post links | 1 |
 | C4 | Graphic animal-cruelty content | M | M | Report category; quarantine; content warnings | 3 |
 

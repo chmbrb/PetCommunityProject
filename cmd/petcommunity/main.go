@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +33,9 @@ import (
 	"github.com/chmbrb/PetCommunityProject/internal/database"
 	"github.com/chmbrb/PetCommunityProject/internal/jobs"
 	"github.com/chmbrb/PetCommunityProject/internal/mail"
+	"github.com/chmbrb/PetCommunityProject/internal/media"
 	"github.com/chmbrb/PetCommunityProject/internal/server"
+	"github.com/chmbrb/PetCommunityProject/internal/storage"
 	"github.com/chmbrb/PetCommunityProject/internal/version"
 )
 
@@ -76,6 +79,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return 1
 	}
 	logger := newLogger(cfg, stderr)
+	if cfg.Env == config.Production && strings.HasPrefix(cfg.Storage.Endpoint, "http://") {
+		logger.Warn("PC_S3_ENDPOINT is plain HTTP; use this only for a storage server on the instance's private network")
+	}
 
 	switch args[0] {
 	case "serve":
@@ -118,10 +124,16 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	objects, err := storage.NewS3(cfg.Storage)
+	if err != nil {
+		return err
+	}
+	// The API only stores raw uploads in quarantine; it never decodes them.
+	mediaSvc := media.NewService(st, objects, queue, nil, logger)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(cfg, st, authSvc, logger),
+		Handler:           server.New(cfg, st, authSvc, mediaSvc, logger),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -162,6 +174,14 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Untrusted images must only ever be decoded by memory-safe code (ADR 0021).
+	if err := media.CheckPureCodecs(); err != nil {
+		return err
+	}
+	objects, err := storage.NewS3(cfg.Storage)
+	if err != nil {
+		return err
+	}
 
 	pool, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -176,7 +196,10 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	emailer := auth.NewEmailer(cfg, st, sender, logger)
 	keys := jobs.NewKeyMaker(st, sealer, logger)
-	client, err := jobs.NewWorker(pool, st, emailer, keys, logger)
+	// No abuse-imagery scanning service is configured yet (ADR 0011); uploads are
+	// limited to accounts with a confirmed email meanwhile.
+	mediaSvc := media.NewService(st, objects, nil, media.NoScanner{}, logger)
+	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, logger)
 	if err != nil {
 		return err
 	}

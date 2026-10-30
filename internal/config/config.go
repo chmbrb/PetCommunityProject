@@ -66,10 +66,29 @@ type Config struct {
 	PublicURL string
 	// Mail is how the worker sends email.
 	Mail Mail
+	// Storage is the S3-compatible object storage for media (ADR 0010).
+	Storage Storage
 	// SecretKey (32 bytes, PC_SECRET_KEY) encrypts actors' private keys at rest
 	// (ADR 0012). Only the worker needs it; it's nil in production processes that
 	// weren't given it.
 	SecretKey []byte
+}
+
+// Storage configures S3-compatible object storage: a hosted provider in production,
+// MinIO in development.
+type Storage struct {
+	// Endpoint is the S3 API address, e.g. https://s3.us-west-004.backblazeb2.com.
+	Endpoint  string
+	Region    string
+	AccessKey string
+	SecretKey string
+	// QuarantineBucket holds raw uploads until they're processed. Private.
+	QuarantineBucket string
+	// MediaBucket holds processed images. Publicly readable.
+	MediaBucket string
+	// MediaURL is the public address of MediaBucket's contents, e.g.
+	// https://media.pets.example.org. Image URLs are MediaURL + "/" + key.
+	MediaURL string
 }
 
 // RequireSecretKey reports whether a usable secret key is configured, for processes
@@ -124,6 +143,8 @@ type RateLimits struct {
 	// EmailRecipient limits emails sent to any one address (sign-in links,
 	// verification), so nobody can flood someone else's inbox.
 	EmailRecipient ratelimit.Policy
+	// Upload covers image uploads, which cost storage and processing time.
+	Upload ratelimit.Policy
 }
 
 // DefaultRateLimits are generous for people, including several staff at a shelter
@@ -135,6 +156,7 @@ func DefaultRateLimits() RateLimits {
 		SignUp: ratelimit.Policy{Burst: 5, Every: 2 * time.Minute},          // 30/h sustained
 		// 3 at once, then 3/h sustained, per recipient address.
 		EmailRecipient: ratelimit.Policy{Burst: 3, Every: 20 * time.Minute},
+		Upload:         ratelimit.Policy{Burst: 10, Every: 3 * time.Minute}, // 20/h sustained
 	}
 }
 
@@ -167,6 +189,14 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.Env != Production {
 		cfg.SecretKey = DevSecretKey
 	}
+	cfg.Storage = storageDefaults(cfg.Env)
+	cfg.Storage.Endpoint = valueOr(getenv("PC_S3_ENDPOINT"), cfg.Storage.Endpoint)
+	cfg.Storage.Region = valueOr(getenv("PC_S3_REGION"), cfg.Storage.Region)
+	cfg.Storage.AccessKey = valueOr(getenv("PC_S3_ACCESS_KEY"), cfg.Storage.AccessKey)
+	cfg.Storage.SecretKey = valueOr(getenv("PC_S3_SECRET_KEY"), cfg.Storage.SecretKey)
+	cfg.Storage.QuarantineBucket = valueOr(getenv("PC_S3_QUARANTINE_BUCKET"), cfg.Storage.QuarantineBucket)
+	cfg.Storage.MediaBucket = valueOr(getenv("PC_S3_MEDIA_BUCKET"), cfg.Storage.MediaBucket)
+	cfg.Storage.MediaURL = strings.TrimSuffix(valueOr(getenv("PC_MEDIA_URL"), cfg.Storage.MediaURL), "/")
 
 	var parseErrs []error
 	if v := getenv("PC_TRUST_PROXY"); v != "" {
@@ -237,7 +267,27 @@ func (c Config) validate() error {
 		errs = append(errs, errors.New("PC_SMTP_CA_FILE needs PC_SMTP_SECURITY=starttls or tls"))
 	}
 
+	for name, v := range map[string]string{"PC_S3_ENDPOINT": c.Storage.Endpoint, "PC_MEDIA_URL": c.Storage.MediaURL} {
+		if u, err := url.Parse(v); err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			errs = append(errs, fmt.Errorf("%s must be a URL like https://example.org, got %q", name, v))
+		}
+	}
+	// Browsers load images from PC_MEDIA_URL, so it must be HTTPS. PC_S3_ENDPOINT may
+	// be plain HTTP for a storage server on the instance's private network.
+	if c.Env == Production && !strings.HasPrefix(c.Storage.MediaURL, "https://") {
+		errs = append(errs, errors.New("PC_MEDIA_URL must use https in production"))
+	}
+	if c.Storage.QuarantineBucket == "" || c.Storage.MediaBucket == "" || c.Storage.QuarantineBucket == c.Storage.MediaBucket {
+		errs = append(errs, errors.New("PC_S3_QUARANTINE_BUCKET and PC_S3_MEDIA_BUCKET must be set and different (raw uploads must never be public)"))
+	}
+
 	if c.Env == Production {
+		if c.Storage.AccessKey == "" || c.Storage.SecretKey == "" {
+			errs = append(errs, errors.New("PC_S3_ACCESS_KEY and PC_S3_SECRET_KEY are required in production"))
+		}
+		if c.Storage.SecretKey == DevDatabasePassword {
+			errs = append(errs, errors.New("PC_S3_SECRET_KEY uses the development password"))
+		}
 		if c.Mail.Host == "" {
 			errs = append(errs, errors.New("PC_SMTP_HOST is required in production (your email provider's SMTP server)"))
 		}
@@ -247,7 +297,7 @@ func (c Config) validate() error {
 		if !strings.HasPrefix(c.PublicURL, "https://") {
 			errs = append(errs, errors.New("PC_PUBLIC_URL must use https in production"))
 		}
-		if c.RateLimits.API.Disabled() || c.RateLimits.SignIn.Disabled() || c.RateLimits.SignUp.Disabled() || c.RateLimits.EmailRecipient.Disabled() {
+		if c.RateLimits.API.Disabled() || c.RateLimits.SignIn.Disabled() || c.RateLimits.SignUp.Disabled() || c.RateLimits.EmailRecipient.Disabled() || c.RateLimits.Upload.Disabled() {
 			errs = append(errs, errors.New("rate limits can't be disabled in production"))
 		}
 		if c.InstanceDomain == "" {
@@ -297,6 +347,20 @@ func publicURLDefault(env Environment, domain string) string {
 		return ""
 	}
 	return "http://localhost:5173"
+}
+
+// storageDefaults point development at MinIO (compose.dev.yaml). In production the
+// operator sets their provider's endpoint, credentials, and public media address.
+func storageDefaults(env Environment) Storage {
+	s := Storage{Region: "us-east-1", QuarantineBucket: "quarantine", MediaBucket: "media"}
+	if env == Production {
+		return s
+	}
+	s.Endpoint = "http://localhost:9000"
+	s.AccessKey = "petcommunity"
+	s.SecretKey = DevDatabasePassword
+	s.MediaURL = "http://localhost:9000/media"
+	return s
 }
 
 // mailDefaults point development at Mailpit (compose.dev.yaml). In production the

@@ -1,0 +1,5 @@
+# Serves the local stack's MinIO media bucket at /media/, standing in for a hosted
+# provider's public bucket. compose.local.yaml mounts this into Caddy's extra/ folder.
+handle /media/* {
+	reverse_proxy minio:9000
+}

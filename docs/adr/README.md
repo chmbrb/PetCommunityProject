@@ -18,7 +18,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0008](0008-caddy-reverse-proxy.md) | Caddy as the reverse proxy | Accepted |
 | [0009](0009-docker-compose-deployment.md) | Docker Compose deployment | Accepted |
 | [0010](0010-s3-compatible-media-storage.md) | S3-compatible object storage for media | Accepted |
-| [0011](0011-media-processing-pipeline.md) | Media processing pipeline | Accepted |
+| [0011](0011-media-processing-pipeline.md) | Media processing pipeline | Accepted (codecs superseded by 0021) |
 | [0012](0012-activitypub-shaped-model-federation-deferred.md) | ActivityPub-shaped data model, federation deferred | Accepted |
 | [0013](0013-identifiers-uuidv7-stable-uris.md) | UUIDv7 identifiers and stable URIs | Accepted |
 | [0014](0014-authentication-sessions-mfa.md) | Authentication: server-side sessions and MFA | Accepted |
@@ -28,6 +28,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0018](0018-mobile-apps-capacitor.md) | Native mobile apps with Capacitor | Accepted |
 | [0019](0019-sign-in-options-passkeys-sso.md) | Sign-in options: passkeys, magic links, and Google/Apple SSO | Accepted |
 | [0020](0020-shelter-software-imports.md) | Shelter software imports (Shelterluv and PetPoint) | Accepted |
+| [0021](0021-memory-safe-image-codecs.md) | Memory-safe image codecs (pure Go and WebAssembly) | Accepted |
 
 ## Writing a new ADR
 

@@ -32,6 +32,7 @@ type Actor struct {
 	PrivateKeyEnc []byte
 	PrivateKeyKid *string
 	KeysCreatedAt *time.Time
+	AvatarMediaID uuid.NullUUID
 }
 
 type AuthIdentity struct {
@@ -60,6 +61,25 @@ type InstanceFeatureFlag struct {
 	Enabled   bool
 	Config    []byte
 	UpdatedAt time.Time
+}
+
+type MediaAsset struct {
+	ID              uuid.UUID
+	OwnerActorID    uuid.UUID
+	Purpose         string
+	Status          string
+	UploadBytes     int64
+	Format          *string
+	Width           *int32
+	Height          *int32
+	Sha256          []byte
+	Phash           *int64
+	Variants        []byte
+	ScanVerdict     *string
+	SimilarTo       uuid.NullUUID
+	RejectionReason *string
+	CreatedAt       time.Time
+	ProcessedAt     *time.Time
 }
 
 type PasskeyCredential struct {

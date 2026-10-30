@@ -66,9 +66,9 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 ### Media
 
-**MediaAsset**: `id`, `owner_actor_id`, `status` (pending / processing / ready / rejected / quarantined), `mime_type` (image types only), `width`, `height`, `bytes`, `storage_key`, `sha256`, `perceptual_hash` (PDQ), `alt_text`, `created_at`.
+**MediaAsset**: `id`, `owner_actor_id`, `purpose` (avatar; listing photos later), `status` (pending / ready / rejected / quarantined), `upload_bytes`, `format` (detected from content), `width`, `height`, `sha256`, `phash` (64-bit perceptual hash), `variants` (published sizes: name, dimensions, type, storage key), `scan_verdict` (not_scanned / clean / match), `similar_to` (an earlier near-identical image owned by another actor), `rejection_reason`, `created_at`, `processed_at`. `alt_text` comes with listing photos.
 
-Pipeline: upload → size/type check → decode and re-encode (EXIF stripped) → hash → check against the CSAM hash list and against existing listings (stolen photos) → `ready` or `rejected`/`quarantined`.
+Pipeline (ADR 0011, ADR 0021): upload → content-type sniff and size limit (API) → raw file to the private quarantine bucket → worker: abuse-imagery scan (provider pending) → pixel limit from the header → decode with memory-safe codecs → apply orientation → re-encode WebP sizes 320/800/1600 plus an 800 JPEG (metadata dropped) → hashes → near-duplicate check against other owners → publish to the media bucket → delete the raw file → `ready`, or `rejected` / `quarantined`.
 
 ### Animals and listings
 

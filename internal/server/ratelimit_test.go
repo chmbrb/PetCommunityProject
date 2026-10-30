@@ -42,7 +42,7 @@ func newRateLimitedServer(limits config.RateLimits, trustProxy bool) http.Handle
 		TrustProxy:   trustProxy,
 		RateLimits:   limits,
 	}
-	return New(cfg, &fakeStore{}, closedAuth{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(cfg, &fakeStore{}, closedAuth{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 type reqOpts struct {

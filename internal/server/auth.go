@@ -15,6 +15,7 @@ import (
 
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
+	"github.com/chmbrb/PetCommunityProject/internal/media"
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
@@ -123,6 +124,8 @@ type actorJSON struct {
 	ID          uuid.UUID `json:"id"`
 	Handle      string    `json:"handle"`
 	DisplayName string    `json:"display_name"`
+	// Avatar lists the profile photo's sizes; empty when there's none.
+	Avatar []media.PublicVariant `json:"avatar"`
 }
 
 // sessionJSON is only returned to mobile clients, which store the token themselves.
@@ -209,7 +212,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, status int
 		return
 	}
 
-	resp := toMeResponse(me)
+	resp := s.toMeResponse(me)
 	if client == auth.ClientMobile {
 		resp.Session = &sessionJSON{Token: sess.Token, ExpiresAt: sess.ExpiresAt}
 	} else {
@@ -243,14 +246,22 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		s.writeAuthError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toMeResponse(me))
+	writeJSON(w, http.StatusOK, s.toMeResponse(me))
 }
 
-func toMeResponse(me store.GetMeRow) meResponse {
-	return meResponse{
+func (s *Server) toMeResponse(me store.GetMeRow) meResponse {
+	resp := meResponse{
 		Account: accountJSON{ID: me.AccountID, Email: me.Email, EmailVerified: me.EmailVerifiedAt != nil, Status: me.Status},
-		Actor:   actorJSON{ID: me.ActorID, Handle: me.Handle, DisplayName: me.DisplayName},
+		Actor:   actorJSON{ID: me.ActorID, Handle: me.Handle, DisplayName: me.DisplayName, Avatar: []media.PublicVariant{}},
 	}
+	if s.media != nil && len(me.AvatarVariants) > 0 {
+		if variants, err := s.media.PublicVariants(me.AvatarVariants); err == nil {
+			resp.Actor.Avatar = variants
+		} else {
+			s.logger.Warn("decode avatar variants", "error", err)
+		}
+	}
+	return resp
 }
 
 // Session cookies are Secure in production. Development serves plain HTTP on

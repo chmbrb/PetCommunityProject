@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 version: "2"
 
+run:
+  # Image codecs must build without their C shared-library path (ADR 0021).
+  build-tags: [nodynamic]
+
 linters:
   default: standard
   enable:

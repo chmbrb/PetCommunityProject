@@ -36,9 +36,29 @@ export class ApiError extends Error {
 }
 
 /** The signed-in account and its public identity, from GET /api/v1/me. */
+/** One published size of an uploaded image. */
+export interface ImageVariant {
+  name: string
+  width: number
+  height: number
+  content_type: string
+  url: string
+}
+
 export interface Me {
   account: { id: string; email: string; email_verified: boolean; status: string }
-  actor: { id: string; handle: string; display_name: string }
+  actor: { id: string; handle: string; display_name: string; avatar: ImageVariant[] }
+}
+
+/** An uploaded image, as its owner sees it. */
+export interface MediaAsset {
+  id: string
+  purpose: string
+  status: 'pending' | 'ready' | 'rejected' | 'quarantined'
+  width?: number
+  height?: number
+  variants: ImageVariant[]
+  rejection_reason?: string
 }
 
 /** Returned by the first step of sign-up and sign-in: passkey options for the browser. */
@@ -71,20 +91,22 @@ const apiBase = () =>
   resolveApiBase(Capacitor.isNativePlatform(), import.meta.env.VITE_DEFAULT_INSTANCE_URL)
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) {
+  let payload: BodyInit | undefined
+  if (body instanceof Blob) {
+    // Files are sent as-is; the server identifies the format from the content.
+    headers['Content-Type'] = 'application/octet-stream'
+    payload = body
+  } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
+    payload = JSON.stringify(body)
   }
-  const res = await fetchImpl(`${apiBase()}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  const res = await fetchImpl(`${apiBase()}${path}`, { method, headers, body: payload })
   if (!res.ok) {
     let code = 'http_error'
     let message = res.statusText
@@ -214,4 +236,30 @@ export function revokeSession(id: string) {
 
 export function revokeOtherSessions() {
   return request<{ revoked: number }>('POST', '/api/v1/me/sessions/revoke-others')
+}
+
+/** Largest accepted upload, matching the server's limit. */
+export const maxUploadBytes = 15 * 1024 * 1024
+
+/** Uploads an image for processing. Poll fetchMedia until it's ready or rejected. */
+export function uploadImage(file: Blob, purpose: 'avatar') {
+  return request<MediaAsset>('POST', `/api/v1/media?purpose=${purpose}`, file)
+}
+
+export function fetchMedia(id: string) {
+  return request<MediaAsset>('GET', `/api/v1/media/${encodeURIComponent(id)}`)
+}
+
+export function setAvatar(mediaId: string) {
+  return request<Me>('PUT', '/api/v1/me/avatar', { media_id: mediaId })
+}
+
+export function removeAvatar() {
+  return request<void>('DELETE', '/api/v1/me/avatar')
+}
+
+/** Picks the image size closest to (but not below) the wanted width. */
+export function pickVariant(variants: ImageVariant[], width: number): ImageVariant | undefined {
+  const webp = variants.filter((v) => v.content_type === 'image/webp').sort((a, b) => a.width - b.width)
+  return webp.find((v) => v.width >= width) ?? webp.at(-1) ?? variants[0]
 }
