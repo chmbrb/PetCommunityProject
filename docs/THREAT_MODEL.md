@@ -101,7 +101,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | T4 | CSRF | M | M | SameSite cookies + CSRF tokens on state-changing requests | 1 |
 | R1 | A moderator or admin denies taking an action | M | M | Append-only audit log; admins can't edit it | 1 |
 | I1 | SSRF through link previews or (later) federation fetches | M | H | Outbound fetches go through one hardened client: block private/internal IP ranges, re-check after DNS resolution, size and time limits, no redirects to internal addresses | 1 (5) |
-| I2 | Secrets leaked in a repo, image, or logs | M | H | Secrets from env or files, never committed; secret scanning in CI; PII redacted in logs | 1 |
+| I2 | Secrets leaked in a repo, image, or logs | M | H | Production secrets are files (Compose secrets) mounted only into the containers that need them, never environment variables, so `docker inspect`, crash reports and child processes don't see them; `secrets/` is gitignored; gitleaks scans the full history in CI on every change; PII redacted in logs | 1 |
 | I3 | Backup theft | L | H | Backups encrypted before upload; separate credentials with write-only/append-only permission where possible; restricted access. Built: the backup container has no network at all and alone holds the backup key; the database, app, and worker containers can't read the backup store | 1 |
 | I4 | Theft of shelters' import API keys | L | H | Encrypted at rest, used only by the import worker, never shown again after entry; shelters can revoke them; read-only keys where the vendor offers them | 2 |
 | I5 | Theft of actors' private signing keys (impersonation across the fediverse, Phase 5) | L | H | Encrypted at rest with AES-256-GCM under a key derived from `PC_SECRET_KEY`, bound to each actor's ID; only the worker holds the secret, so an API compromise or database dump alone doesn't expose them; the secret isn't in database backups | 1 |
@@ -121,8 +121,8 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 
 | # | Threat | L | I | Mitigations | Phase |
 |---|--------|---|---|-------------|-------|
-| O1 | Vulnerable dependency or container image | M | H | Pinned versions and image digests; `govulncheck` and `npm audit` in CI; Renovate/Dependabot; minimal base images | 1 |
-| O2 | Compromised CI or release pipeline | L | H | Protected branches, signed tags, least-privilege CI tokens, reproducible builds where practical | 1 |
+| O1 | Vulnerable dependency or container image | M | H | Pinned versions and image digests; `govulncheck`, `pnpm audit`, Trivy (lockfiles and built images; fixable high/critical OS-package vulnerabilities fail CI) and dependency review on pull requests; CodeQL; weekly scheduled scans; Dependabot; minimal base images | 1 |
+| O2 | Compromised CI or release pipeline | L | H | Protected branches, signed tags, least-privilege CI tokens (read-only by default, no persisted checkout credentials), actions and scanner images pinned by SHA/digest, actionlint and zizmor on workflow changes, reproducible builds where practical | 1 |
 | O3 | Backup fails silently → data loss | M | H | Monitoring and alerts on backups; scheduled restore drills; RPO/RTO targets set and tested. Built: the backup container's health check fails on stale backups, WAL backlog, archive errors, a failed drill, or a full disk; weekly automatic restore drills; alert emails still to come | 1 |
 | O4 | Instance operator misconfiguration | H | M | Secure defaults; startup self-checks (TLS, secrets set, backups configured); hardening guide | 1 |
 | O5 | Insider misuse of admin access to private data | L | H | Least privilege; break-glass access with a reason field; audit log reviewed by a second person | 1 |

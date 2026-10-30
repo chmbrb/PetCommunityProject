@@ -4,7 +4,12 @@
 # (ADR 0010) are not wired in yet, so don't run a real instance on this until they are.
 #
 #   cp .env.example .env   # then fill in the values
+#   make secrets           # then fill in the provider secrets it lists
 #   docker compose up -d --build
+#
+# Secrets (passwords and keys) are files in PC_SECRETS_DIR, mounted into only the
+# containers that need them under /run/secrets/. They never appear in the environment,
+# so `docker inspect`, crash reports and child processes can't leak them.
 name: petcommunity
 
 services:
@@ -40,7 +45,8 @@ services:
       PC_INSTANCE_NAME: ${PC_INSTANCE_NAME:?set PC_INSTANCE_NAME in .env}
       PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
       PC_SOURCE_URL: ${PC_SOURCE_URL:-https://github.com/chmbrb/PetCommunityProject}
-      PC_DATABASE_URL: postgres://petcommunity:${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}@db:5432/petcommunity
+      PC_DATABASE_URL: postgres://petcommunity@db:5432/petcommunity
+      PC_DATABASE_PASSWORD_FILE: /run/secrets/db_password
       # The app is reachable only through Caddy, which sets X-Forwarded-For to the real
       # client address, so rate limits can key on it.
       PC_TRUST_PROXY: "true"
@@ -49,16 +55,16 @@ services:
       PC_SMTP_PORT: ${PC_SMTP_PORT:-587}
       PC_SMTP_SECURITY: ${PC_SMTP_SECURITY:-starttls}
       PC_SMTP_USERNAME: ${PC_SMTP_USERNAME:-}
-      PC_SMTP_PASSWORD: ${PC_SMTP_PASSWORD:-}
       PC_MAIL_FROM: ${PC_MAIL_FROM:?set PC_MAIL_FROM in .env}
       # Media storage (ADR 0010): see .env.example.
       PC_S3_ENDPOINT: ${PC_S3_ENDPOINT:?set PC_S3_ENDPOINT in .env}
       PC_S3_REGION: ${PC_S3_REGION:-us-east-1}
-      PC_S3_ACCESS_KEY: ${PC_S3_ACCESS_KEY:?set PC_S3_ACCESS_KEY in .env}
-      PC_S3_SECRET_KEY: ${PC_S3_SECRET_KEY:?set PC_S3_SECRET_KEY in .env}
+      PC_S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+      PC_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
       PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
       PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
       PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
+    secrets: [db_password, s3_access_key, s3_secret_key]
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s
@@ -78,7 +84,10 @@ services:
     environment:
       <<: *app-env
       # Encrypts actors' private keys (ADR 0012). Only the worker gets it.
-      PC_SECRET_KEY: ${PC_SECRET_KEY:?set PC_SECRET_KEY in .env}
+      PC_SECRET_KEY_FILE: /run/secrets/secret_key
+      # Only the worker sends email.
+      PC_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+    secrets: [db_password, s3_access_key, s3_secret_key, secret_key, smtp_password]
     read_only: true
     # Decoding large photos is memory-hungry; contain it (ADR 0011).
     mem_limit: 1g
@@ -94,6 +103,7 @@ services:
     image: petcommunity-app:local
     command: ["migrate"]
     environment: *app-env
+    secrets: [db_password, s3_access_key, s3_secret_key]
     read_only: true
     depends_on:
       db:
@@ -102,11 +112,16 @@ services:
     restart: "no"
 
   db:
-    image: docker.io/postgis/postgis:18-3.6
+    # PostGIS with current security fixes; the backup image is built on it (Dockerfile).
+    build:
+      context: .
+      target: db
+    image: petcommunity-db:local
     environment:
       POSTGRES_USER: petcommunity
-      POSTGRES_PASSWORD: ${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: petcommunity
+    secrets: [db_password]
     # Continuous archiving (ADR 0016). Each finished WAL file is copied into the spool
     # folder on the backup disk (via a temporary name, so it appears complete or not at
     # all); the backup container encrypts it into the backup store. This container
@@ -158,9 +173,10 @@ services:
   backup:
     image: petcommunity-backup:local
     environment: &backup-env
-      PC_BACKUP_KEY: ${PC_BACKUP_KEY:?set PC_BACKUP_KEY in .env}
+      PC_BACKUP_KEY_FILE: /run/secrets/backup_key
       PC_BACKUP_APP_DATABASE: petcommunity
       PGUSER: petcommunity
+    secrets: [backup_key]
     volumes:
       - db-data:/var/lib/postgresql:ro
       - pg-socket:/var/run/postgresql
@@ -187,6 +203,7 @@ services:
     # Starts as root only to move the current data aside, then drops to postgres.
     user: root
     environment: *backup-env
+    secrets: [backup_key]
     volumes:
       - db-data:/var/lib/postgresql
       - pg-socket:/var/run/postgresql
@@ -198,6 +215,22 @@ networks:
   # The database is unreachable from Caddy and the internet.
   backend:
     internal: true
+
+# Created by `make secrets` (see secrets/README.md). Compose fails to start if one is
+# missing.
+secrets:
+  db_password:
+    file: ${PC_SECRETS_DIR:-./secrets}/db_password
+  secret_key:
+    file: ${PC_SECRETS_DIR:-./secrets}/secret_key
+  backup_key:
+    file: ${PC_SECRETS_DIR:-./secrets}/backup_key
+  smtp_password:
+    file: ${PC_SECRETS_DIR:-./secrets}/smtp_password
+  s3_access_key:
+    file: ${PC_SECRETS_DIR:-./secrets}/s3_access_key
+  s3_secret_key:
+    file: ${PC_SECRETS_DIR:-./secrets}/s3_secret_key
 
 volumes:
   caddy-data:

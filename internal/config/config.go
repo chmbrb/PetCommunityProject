@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -161,7 +162,22 @@ func DefaultRateLimits() RateLimits {
 }
 
 // Load reads configuration using getenv (normally os.Getenv) and validates it.
+//
+// Secrets (PC_DATABASE_PASSWORD, PC_SECRET_KEY, PC_SMTP_PASSWORD, PC_S3_ACCESS_KEY,
+// PC_S3_SECRET_KEY) can instead be read from a file named by the same variable with a
+// _FILE suffix, such as a Compose secret mounted under /run/secrets. Production uses
+// files, which keeps secrets out of the environment, where they leak into `docker
+// inspect`, crash reports and child processes.
 func Load(getenv func(string) string) (Config, error) {
+	var parseErrs []error
+	readSecret := func(name string) string {
+		v, err := secret(getenv, name)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		return v
+	}
+
 	cfg := Config{
 		Env:            Environment(valueOr(getenv("PC_ENV"), string(Development))),
 		HTTPAddr:       valueOr(getenv("PC_HTTP_ADDR"), ":8080"),
@@ -182,7 +198,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Mail = mailDefaults(cfg.Env)
 	cfg.Mail.Host = valueOr(getenv("PC_SMTP_HOST"), cfg.Mail.Host)
 	cfg.Mail.Username = getenv("PC_SMTP_USERNAME")
-	cfg.Mail.Password = getenv("PC_SMTP_PASSWORD")
+	cfg.Mail.Password = readSecret("PC_SMTP_PASSWORD")
 	cfg.Mail.Security = MailSecurity(valueOr(getenv("PC_SMTP_SECURITY"), string(cfg.Mail.Security)))
 	cfg.Mail.From = valueOr(getenv("PC_MAIL_FROM"), cfg.Mail.From)
 	cfg.Mail.CAFile = getenv("PC_SMTP_CA_FILE")
@@ -192,20 +208,26 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Storage = storageDefaults(cfg.Env)
 	cfg.Storage.Endpoint = valueOr(getenv("PC_S3_ENDPOINT"), cfg.Storage.Endpoint)
 	cfg.Storage.Region = valueOr(getenv("PC_S3_REGION"), cfg.Storage.Region)
-	cfg.Storage.AccessKey = valueOr(getenv("PC_S3_ACCESS_KEY"), cfg.Storage.AccessKey)
-	cfg.Storage.SecretKey = valueOr(getenv("PC_S3_SECRET_KEY"), cfg.Storage.SecretKey)
+	cfg.Storage.AccessKey = valueOr(readSecret("PC_S3_ACCESS_KEY"), cfg.Storage.AccessKey)
+	cfg.Storage.SecretKey = valueOr(readSecret("PC_S3_SECRET_KEY"), cfg.Storage.SecretKey)
 	cfg.Storage.QuarantineBucket = valueOr(getenv("PC_S3_QUARANTINE_BUCKET"), cfg.Storage.QuarantineBucket)
 	cfg.Storage.MediaBucket = valueOr(getenv("PC_S3_MEDIA_BUCKET"), cfg.Storage.MediaBucket)
 	cfg.Storage.MediaURL = strings.TrimSuffix(valueOr(getenv("PC_MEDIA_URL"), cfg.Storage.MediaURL), "/")
 
-	var parseErrs []error
+	if pw := readSecret("PC_DATABASE_PASSWORD"); pw != "" && cfg.DatabaseURL != "" {
+		u, err := withPassword(cfg.DatabaseURL, pw)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		cfg.DatabaseURL = u
+	}
 	if v := getenv("PC_TRUST_PROXY"); v != "" {
 		var err error
 		if cfg.TrustProxy, err = strconv.ParseBool(v); err != nil {
 			parseErrs = append(parseErrs, fmt.Errorf("PC_TRUST_PROXY must be true or false, got %q", v))
 		}
 	}
-	if v := getenv("PC_SECRET_KEY"); v != "" {
+	if v := readSecret("PC_SECRET_KEY"); v != "" {
 		key, err := decodeSecretKey(v)
 		if err != nil {
 			parseErrs = append(parseErrs, err)
@@ -321,6 +343,37 @@ func webAuthnDefaults(env Environment, domain string) (rpID string, origins []st
 		return domain, []string{"https://" + domain}
 	}
 	return "localhost", []string{"http://localhost:5173", "http://localhost:8080"}
+}
+
+// secret returns the environment variable name, or the contents of the file named by
+// name_FILE without the trailing newline. Setting both is an error, so it's always
+// clear which one is in use.
+func secret(getenv func(string) string, name string) (string, error) {
+	v, file := getenv(name), getenv(name+"_FILE")
+	if file == "" {
+		return v, nil
+	}
+	if v != "" {
+		return "", fmt.Errorf("set %s or %s_FILE, not both", name, name)
+	}
+	b, err := os.ReadFile(file) //nolint:gosec // G304: the path comes from the operator's configuration
+	if err != nil {
+		return "", fmt.Errorf("%s_FILE: %w", name, err)
+	}
+	return strings.TrimRight(string(b), "\r\n"), nil
+}
+
+// withPassword adds password to a database URL that names a user but no password.
+func withPassword(databaseURL, password string) (string, error) {
+	u, err := url.Parse(databaseURL)
+	if err != nil || u.User == nil || u.User.Username() == "" {
+		return databaseURL, errors.New("PC_DATABASE_PASSWORD needs PC_DATABASE_URL to name the user, e.g. postgres://petcommunity@db:5432/petcommunity")
+	}
+	if _, set := u.User.Password(); set {
+		return databaseURL, errors.New("PC_DATABASE_URL already contains a password; remove it when using PC_DATABASE_PASSWORD")
+	}
+	u.User = url.UserPassword(u.User.Username(), password)
+	return u.String(), nil
 }
 
 // decodeSecretKey accepts a 32-byte key in standard or URL-safe base64, padded or not.

@@ -19,7 +19,23 @@
 #   health                exit 0 if backups are current (container health check)
 set -euo pipefail
 
-: "${PC_BACKUP_KEY:?PC_BACKUP_KEY is required (32 random bytes, base64)}"
+# The backup key (32 random bytes, base64) normally comes from a file, a Compose
+# secret, which WAL-G reads itself, so the key never enters any process's environment.
+if [ -n "${PC_BACKUP_KEY_FILE:-}" ]; then
+	if [ -n "${PC_BACKUP_KEY:-}" ]; then
+		echo "pc-backup: set PC_BACKUP_KEY or PC_BACKUP_KEY_FILE, not both" >&2
+		exit 1
+	fi
+	if [ ! -r "$PC_BACKUP_KEY_FILE" ]; then
+		echo "pc-backup: can't read PC_BACKUP_KEY_FILE ($PC_BACKUP_KEY_FILE)" >&2
+		exit 1
+	fi
+	export WALG_LIBSODIUM_KEY_PATH="$PC_BACKUP_KEY_FILE"
+else
+	: "${PC_BACKUP_KEY:?PC_BACKUP_KEY_FILE (or PC_BACKUP_KEY) is required}"
+	export WALG_LIBSODIUM_KEY="$PC_BACKUP_KEY"
+	unset PC_BACKUP_KEY
+fi
 BACKUPS=/backups
 SPOOL=/wal-spool
 STATUS="$BACKUPS/status"
@@ -31,7 +47,6 @@ VERIFY_EVERY="${PC_BACKUP_VERIFY_INTERVAL_SECONDS:-604800}"
 APP_DB="${PC_BACKUP_APP_DATABASE:-postgres}"
 
 export WALG_FILE_PREFIX="$BACKUPS/walg"
-export WALG_LIBSODIUM_KEY="$PC_BACKUP_KEY"
 export WALG_LIBSODIUM_KEY_TRANSFORM=base64
 export WALG_COMPRESSION_METHOD=lz4
 # Postgres is reached only through its Unix socket, shared as a volume. PGPORT and
@@ -112,6 +127,13 @@ recover() {
 # and deletes it. Nothing touches the live database.
 verify() {
 	local scratch=/scratch/verify
+	# One drill at a time: a manual `pc-backup verify` and the service loop's scheduled
+	# drill would otherwise share (and delete) the same scratch copy.
+	exec 9>/scratch/verify.lock
+	if ! flock -n 9; then
+		log "a restore drill is already running; try again when it finishes"
+		return 1
+	fi
 	rm -rf "$scratch"
 	push_wal || true
 	log "restore drill: restoring the latest backup into a scratch copy"
