@@ -12,7 +12,7 @@ updates:
     directory: /web
     schedule: { interval: weekly }
     ignore:
-      # Node types must match the Node.js runtime major (24 LTS); move both together, deliberately.
+      # Node types must match the Node.js runtime major (26 LTS); move both together, deliberately.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
     groups:
