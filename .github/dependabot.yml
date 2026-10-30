@@ -38,6 +38,12 @@ updates:
     ignore:
       - dependency-name: "postgis/postgis"
         update-types: ["version-update:semver-major"]
+    groups:
+      # Chainguard rebuilds its images almost daily, so update them together in one
+      # weekly PR. They're pinned by digest alone, which has no publication date, so
+      # Dependabot can't apply a cooldown to them; that's expected. They only run in
+      # the development and local stacks, never in production.
+      chainguard: { patterns: ["chainguard/*"] }
 
   - package-ecosystem: github-actions
     directory: /
