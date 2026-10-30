@@ -13,7 +13,7 @@ export GOFLAGS := -tags=nodynamic
 export PC_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity?sslmode=disable
 TEST_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity_test?sslmode=disable
 
-.PHONY: help dev-up dev-down dev-reset migrate run worker web local-certs local-up local-down local-reset local-logs generate test test-go test-integration test-web lint vuln images
+.PHONY: help dev-up dev-down dev-reset migrate run worker web local-certs local-up local-down local-reset local-logs local-backup-list local-backup-drill generate test test-go test-integration test-web lint vuln images
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -76,6 +76,12 @@ local-reset: ## Stop the local production stack and delete its data
 
 local-logs: ## Follow the local production stack's logs
 	$(LOCAL_COMPOSE) logs -f
+
+local-backup-list: ## List the local production stack's base backups
+	$(LOCAL_COMPOSE) exec backup pc-backup list
+
+local-backup-drill: ## Restore the latest local backup into a scratch copy and check it
+	$(LOCAL_COMPOSE) exec backup pc-backup verify
 
 images: ## Build the app and web container images
 	docker build --target app --build-arg VERSION=$(VERSION) -t petcommunity-app:local .
