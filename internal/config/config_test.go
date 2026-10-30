@@ -30,6 +30,52 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestTrustProxy(t *testing.T) {
+	base := map[string]string{"PC_DATABASE_URL": "postgres://x"}
+	cfg, err := Load(env(base))
+	if err != nil || cfg.TrustProxy {
+		t.Fatalf("default TrustProxy = %v (err %v), want false", cfg.TrustProxy, err)
+	}
+
+	base["PC_TRUST_PROXY"] = "true"
+	if cfg, err = Load(env(base)); err != nil || !cfg.TrustProxy {
+		t.Fatalf("PC_TRUST_PROXY=true: TrustProxy = %v (err %v)", cfg.TrustProxy, err)
+	}
+
+	base["PC_TRUST_PROXY"] = "sometimes"
+	if _, err = Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_TRUST_PROXY") {
+		t.Fatalf("invalid PC_TRUST_PROXY: err = %v", err)
+	}
+}
+
+func TestRateLimitsEnabledByDefault(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, p := range map[string]bool{
+		"API": cfg.RateLimits.API.Disabled(), "SignIn": cfg.RateLimits.SignIn.Disabled(), "SignUp": cfg.RateLimits.SignUp.Disabled(),
+	} {
+		if p {
+			t.Errorf("%s rate limit disabled by default", name)
+		}
+	}
+}
+
+func TestProductionRequiresRateLimits(t *testing.T) {
+	cfg := Config{
+		Env: Production, DatabaseURL: "postgres://app:s3cret@db/app", InstanceDomain: "pets.example.org",
+		SourceURL: DefaultSourceURL, WebAuthnRPID: "pets.example.org", WebAuthnOrigins: []string{"https://pets.example.org"},
+	}
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "rate limits") {
+		t.Fatalf("validate with no rate limits: err = %v", err)
+	}
+	cfg.RateLimits = DefaultRateLimits()
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate with default rate limits: %v", err)
+	}
+}
+
 func TestWebAuthnProductionDefaults(t *testing.T) {
 	cfg, err := Load(env(map[string]string{
 		"PC_ENV":             "production",

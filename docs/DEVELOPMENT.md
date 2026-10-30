@@ -98,6 +98,20 @@ docker compose up -d --build
 
 It's a **preview**: backups (ADR 0016) and media storage (ADR 0010) aren't wired in yet, so don't run a real instance on it until they are.
 
+### Rate limits
+
+The API limits requests per client IP address (IPv6 clients are grouped by /64 network). Defaults are in `config.DefaultRateLimits`:
+
+| Limit | Applies to | Burst, then sustained |
+|-------|------------|-----------------------|
+| API | every `/api` request | 100, then 10 per second |
+| Sign-in | `/api/v1/auth/login/*` | 10, then 10 per minute |
+| Sign-up | `/api/v1/auth/signup/*` | 5, then 30 per hour |
+
+Over the limit, the API answers `429 Too Many Requests` with a `Retry-After` header. Limits are kept in memory in the app process, which suits the single-host deployment; they reset when the app restarts.
+
+The client IP comes from the TCP connection, or from `X-Forwarded-For` when `PC_TRUST_PROXY=true`. `compose.yaml` sets that because the app is reachable only through Caddy. Never enable it when clients can reach the app directly: they could then pick their own IP and evade the limits.
+
 ## Podman
 
 Docker Compose works with Podman through Podman's API socket:

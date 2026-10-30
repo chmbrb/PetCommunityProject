@@ -41,6 +41,9 @@ services:
       PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
       PC_SOURCE_URL: ${PC_SOURCE_URL:-https://github.com/chmbrb/PetCommunityProject}
       PC_DATABASE_URL: postgres://petcommunity:${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}@db:5432/petcommunity
+      # The app is reachable only through Caddy, which sets X-Forwarded-For to the real
+      # client address, so rate limits can key on it.
+      PC_TRUST_PROXY: "true"
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s

@@ -28,12 +28,13 @@ type Server struct {
 	cfg    config.Config
 	store  Store
 	auth   AuthService
+	limits limiters
 	logger *slog.Logger
 }
 
 // New returns the application's HTTP handler.
 func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) http.Handler {
-	s := &Server{cfg: cfg, store: st, auth: authSvc, logger: logger}
+	s := &Server{cfg: cfg, store: st, auth: authSvc, limits: newLimiters(cfg.RateLimits), logger: logger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -53,6 +54,7 @@ func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) 
 		s.recoverPanics,
 		securityHeaders,
 		nativeAppCORS,
+		s.rateLimit,
 		crossOriginProtection(),
 		limitBody(maxRequestBody),
 		jsonRoutingErrors,
