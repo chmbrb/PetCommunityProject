@@ -44,6 +44,13 @@ services:
       # The app is reachable only through Caddy, which sets X-Forwarded-For to the real
       # client address, so rate limits can key on it.
       PC_TRUST_PROXY: "true"
+      # Outgoing email through your provider's SMTP server (see .env.example).
+      PC_SMTP_HOST: ${PC_SMTP_HOST:?set PC_SMTP_HOST in .env}
+      PC_SMTP_PORT: ${PC_SMTP_PORT:-587}
+      PC_SMTP_SECURITY: ${PC_SMTP_SECURITY:-starttls}
+      PC_SMTP_USERNAME: ${PC_SMTP_USERNAME:-}
+      PC_SMTP_PASSWORD: ${PC_SMTP_PASSWORD:-}
+      PC_MAIL_FROM: ${PC_MAIL_FROM:?set PC_MAIL_FROM in .env}
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s
@@ -53,6 +60,19 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    networks: [edge, backend]
+    restart: unless-stopped
+
+  # Runs background jobs: sends email and cleans up expired tokens (ADR 0006).
+  worker:
+    image: petcommunity-app:local
+    command: ["worker"]
+    environment: *app-env
+    read_only: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # edge gives it internet access to reach the SMTP server.
     networks: [edge, backend]
     restart: unless-stopped
 

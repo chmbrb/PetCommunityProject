@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 export PC_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity?sslmode=disable
 TEST_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity_test?sslmode=disable
 
-.PHONY: help dev-up dev-down dev-reset migrate run web generate test test-go test-integration test-web lint vuln images
+.PHONY: help dev-up dev-down dev-reset migrate run worker web generate test test-go test-integration test-web lint vuln images
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -28,6 +28,9 @@ migrate: ## Apply database migrations to the development database
 
 run: ## Run the API on :8080
 	go run ./cmd/petcommunity serve
+
+worker: ## Run background jobs (sends email to Mailpit in development)
+	go run ./cmd/petcommunity worker
 
 web: ## Run the web app with hot reload on :5173
 	cd web && pnpm dev

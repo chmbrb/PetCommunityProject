@@ -45,8 +45,12 @@ func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) 
 	mux.HandleFunc("POST /api/v1/auth/signup/finish", s.handleSignupFinish)
 	mux.HandleFunc("POST /api/v1/auth/login/begin", s.handleLoginBegin)
 	mux.HandleFunc("POST /api/v1/auth/login/finish", s.handleLoginFinish)
+	mux.HandleFunc("POST /api/v1/auth/login/email/request", s.handleSignInLinkRequest)
+	mux.HandleFunc("POST /api/v1/auth/login/email/finish", s.handleSignInLinkFinish)
+	mux.HandleFunc("POST /api/v1/auth/email/verify", s.handleVerifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/v1/me", s.handleMe)
+	mux.HandleFunc("POST /api/v1/me/email/verification", s.handleResendVerification)
 
 	return chain(mux,
 		s.requestID,

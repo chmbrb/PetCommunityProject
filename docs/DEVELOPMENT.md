@@ -12,9 +12,10 @@ How to run PetCommunityProject locally. For why things are built this way, see t
 ## Quick start
 
 ```sh
-make dev-up      # Postgres + PostGIS and MinIO in containers
+make dev-up      # Postgres + PostGIS, MinIO, and Mailpit in containers
 make migrate     # apply database migrations
 make run         # API on http://localhost:8080
+make worker      # in another terminal: background jobs (sends email)
 make web         # in another terminal: web app on http://localhost:5173
 ```
 
@@ -25,6 +26,10 @@ Open http://localhost:5173. The page should say **Connected**. The Vite dev serv
 Passkeys work on `http://localhost` because browsers treat localhost as a secure context. Use `localhost`, not `127.0.0.1`: passkeys are bound to the relying party ID, which defaults to `localhost` in development (`PC_WEBAUTHN_RP_ID`, with allowed origins in `PC_WEBAUTHN_ORIGINS`). In production both default to the instance domain.
 
 To try sign-up without a real authenticator, use Chrome DevTools → More tools → WebAuthn, and enable a virtual authenticator with resident key and user verification support. The Go integration tests use a virtual authenticator too (`internal/server/auth_integration_test.go`).
+
+### Email in development
+
+Mailpit catches every email the worker sends. Read them at http://localhost:8025. Nothing leaves your machine. Email is only sent while `make worker` is running; queued emails go out as soon as it starts.
 
 `make help` lists every target.
 
@@ -97,6 +102,15 @@ docker compose up -d --build
 ```
 
 It's a **preview**: backups (ADR 0016) and media storage (ADR 0010) aren't wired in yet, so don't run a real instance on it until they are.
+
+### Email
+
+The API never sends email itself: it queues a job, and the `worker` service sends it through the SMTP server in `.env` (ADR 0006). Use a transactional email provider; running your own mail server is hard to get delivered reliably. Before going live:
+
+- Set up the provider's domain authentication (SPF, DKIM, and a DMARC record) for the domain in `PC_MAIL_FROM`, or mail will land in spam.
+- Check `docker compose logs worker` for `email sent` lines after signing up.
+
+Email links point to `PC_PUBLIC_URL` (by default `https://` + the instance domain). One-time tokens are put in the link's `#fragment`, which browsers never send to the server, and only their hashes are stored. Emails per recipient address are limited (`EmailRecipient` in `config.DefaultRateLimits`), so nobody can flood someone's inbox with sign-in links.
 
 ### Rate limits
 

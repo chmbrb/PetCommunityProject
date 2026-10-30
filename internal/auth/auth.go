@@ -23,6 +23,7 @@ import (
 
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
+	"github.com/chmbrb/PetCommunityProject/internal/ratelimit"
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
@@ -72,11 +73,15 @@ type Principal struct {
 type Service struct {
 	db     *database.Store
 	wa     *webauthn.WebAuthn
+	queue  JobQueue
 	logger *slog.Logger
+	// emailLimiter caps emails per recipient address.
+	emailLimiter *ratelimit.Limiter
 }
 
-// New configures passkeys for this instance.
-func New(cfg config.Config, db *database.Store, logger *slog.Logger) (*Service, error) {
+// New configures passkeys for this instance. Emails are queued on queue and sent by
+// the worker.
+func New(cfg config.Config, db *database.Store, queue JobQueue, logger *slog.Logger) (*Service, error) {
 	wa, err := webauthn.New(&webauthn.Config{
 		RPID:          cfg.WebAuthnRPID,
 		RPDisplayName: cfg.InstanceName,
@@ -93,7 +98,10 @@ func New(cfg config.Config, db *database.Store, logger *slog.Logger) (*Service, 
 	if err != nil {
 		return nil, fmt.Errorf("configure passkeys: %w", err)
 	}
-	return &Service{db: db, wa: wa, logger: logger}, nil
+	return &Service{
+		db: db, wa: wa, queue: queue, logger: logger,
+		emailLimiter: ratelimit.New(cfg.RateLimits.EmailRecipient),
+	}, nil
 }
 
 // passkeyUser adapts an account to go-webauthn's User interface.
@@ -187,7 +195,7 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 	}
 
 	var issued Session
-	err = s.db.InTx(ctx, func(q *store.Queries) error {
+	err = s.db.InTx(ctx, func(tx pgx.Tx, q *store.Queries) error {
 		if open, err := q.FeatureFlagEnabled(ctx, "open_registration"); err != nil {
 			return err
 		} else if !open {
@@ -214,6 +222,10 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 			IdentityID: identityID, CredentialID: cred.ID, Credential: credJSON,
 		}); err != nil {
 			return err
+		}
+		// Queued in the same transaction, so the email goes out only if the account exists.
+		if _, err := s.queue.InsertTx(ctx, tx, EmailJob{AccountID: pending.AccountID, Purpose: PurposeVerifyEmail}, nil); err != nil {
+			return fmt.Errorf("queue verification email: %w", err)
 		}
 		issued, err = createSession(ctx, q, pending.AccountID, client)
 		return err
@@ -298,7 +310,7 @@ func (s *Service) FinishLogin(ctx context.Context, challengeID uuid.UUID, creden
 	identityID := identityByCredential[string(cred.ID)]
 
 	var issued Session
-	err = s.db.InTx(ctx, func(q *store.Queries) error {
+	err = s.db.InTx(ctx, func(_ pgx.Tx, q *store.Queries) error {
 		if err := q.UpdatePasskeyAfterLogin(ctx, store.UpdatePasskeyAfterLoginParams{
 			IdentityID: identityID, Credential: credJSON,
 		}); err != nil {
@@ -351,10 +363,6 @@ func (s *Service) Me(ctx context.Context, accountID uuid.UUID) (store.GetMeRow, 
 }
 
 func (s *Service) saveChallenge(ctx context.Context, purpose string, session *webauthn.SessionData, pending *pendingSignup) (uuid.UUID, error) {
-	// Opportunistic cleanup until there's a job queue (ADR 0006).
-	if err := s.db.DeleteExpiredWebAuthnChallenges(ctx); err != nil {
-		s.logger.WarnContext(ctx, "delete expired challenges", "error", err)
-	}
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		return uuid.Nil, err
@@ -382,26 +390,36 @@ func (s *Service) takeChallenge(ctx context.Context, id uuid.UUID, purpose strin
 }
 
 func createSession(ctx context.Context, q *store.Queries, accountID uuid.UUID, client Client) (Session, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	token, hash, err := newToken()
+	if err != nil {
 		return Session{}, err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	hash, _ := hashToken(token)
 
 	ttl := webSessionTTL
 	if client == ClientMobile {
 		ttl = mobileSessionTTL
 	}
 	expires := time.Now().Add(ttl)
-	err := q.CreateSession(ctx, store.CreateSessionParams{
+	err = q.CreateSession(ctx, store.CreateSessionParams{
 		ID: mustUUIDv7(), TokenHash: hash, AccountID: accountID, Client: string(client), ExpiresAt: expires,
 	})
 	return Session{Token: token, ExpiresAt: expires, AccountID: accountID}, err
 }
 
-// hashToken returns the stored form of a session token, or false if the token is
-// malformed.
+// newToken returns a random 256-bit token for a session or an email link, and the hash
+// that's stored in its place.
+func newToken() (token string, hash []byte, err error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", nil, err
+	}
+	token = base64.RawURLEncoding.EncodeToString(raw)
+	sum := sha256.Sum256(raw)
+	return token, sum[:], nil
+}
+
+// hashToken returns the stored form of a session or email token, or false if the
+// token is malformed.
 func hashToken(token string) ([]byte, bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(raw) != 32 {

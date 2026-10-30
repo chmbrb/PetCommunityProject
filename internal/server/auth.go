@@ -27,6 +27,11 @@ type AuthService interface {
 	Authenticate(ctx context.Context, token string) (auth.Principal, error)
 	SignOut(ctx context.Context, sessionID uuid.UUID) error
 	Me(ctx context.Context, accountID uuid.UUID) (store.GetMeRow, error)
+
+	RequestSignInLink(ctx context.Context, email string) error
+	FinishSignInLink(ctx context.Context, token string, client auth.Client) (auth.Session, error)
+	VerifyEmail(ctx context.Context, token string) error
+	ResendVerification(ctx context.Context, accountID uuid.UUID) error
 }
 
 type principalKey struct{}
@@ -152,21 +157,33 @@ func (s *Server) finish(w http.ResponseWriter, r *http.Request, status int, fn f
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	client := auth.ClientWeb
-	switch req.Client {
-	case "", "web":
-	case "mobile":
-		client = auth.ClientMobile
-	default:
-		writeError(w, http.StatusBadRequest, "invalid_request", `client must be "web" or "mobile"`)
+	client, ok := parseClient(w, req.Client)
+	if !ok {
 		return
 	}
-
 	sess, err := fn(r.Context(), req.ChallengeID, req.Credential, client)
 	if err != nil {
 		s.writeAuthError(w, r, err)
 		return
 	}
+	s.startSession(w, r, status, sess, client)
+}
+
+// parseClient reads the "client" request field: "web" (the default) or "mobile".
+func parseClient(w http.ResponseWriter, v string) (auth.Client, bool) {
+	switch v {
+	case "", "web":
+		return auth.ClientWeb, true
+	case "mobile":
+		return auth.ClientMobile, true
+	}
+	writeError(w, http.StatusBadRequest, "invalid_request", `client must be "web" or "mobile"`)
+	return "", false
+}
+
+// startSession responds to a successful sign-in: a cookie for web clients, the token
+// in the body for mobile clients.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, status int, sess auth.Session, client auth.Client) {
 	me, err := s.auth.Me(r.Context(), sess.AccountID)
 	if err != nil {
 		s.writeAuthError(w, r, err)
@@ -262,6 +279,10 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusBadRequest, "passkey_rejected", err.Error())
 	case errors.Is(err, auth.ErrSignInFailed):
 		writeError(w, http.StatusUnauthorized, "sign_in_failed", err.Error())
+	case errors.Is(err, auth.ErrLinkInvalid):
+		writeError(w, http.StatusBadRequest, "link_invalid", err.Error())
+	case errors.Is(err, auth.ErrTooManyEmails):
+		writeError(w, http.StatusTooManyRequests, "too_many_emails", err.Error())
 	default:
 		s.logger.ErrorContext(r.Context(), "auth request failed", "error", err, "path", r.URL.Path)
 		writeError(w, http.StatusInternalServerError, "internal", "internal error")

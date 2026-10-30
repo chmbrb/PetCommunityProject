@@ -50,7 +50,7 @@ DELETE FROM webauthn_challenges
 WHERE id = $1 AND purpose = $2 AND expires_at > now()
 RETURNING session, signup;
 
--- name: DeleteExpiredWebAuthnChallenges :exec
+-- name: DeleteExpiredWebAuthnChallenges :execrows
 DELETE FROM webauthn_challenges WHERE expires_at <= now();
 
 -- name: CreateSession :exec

@@ -1,0 +1,4 @@
+{{template "layout_top" .}}<p style="margin:0 0 16px;font-size:16px;">Use this button to sign in to {{.InstanceName}}.</p>
+<p style="margin:24px 0;"><a href="{{.Link}}" style="display:inline-block;background:#2e7d6b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:16px;">Sign in</a></p>
+<p style="margin:0;font-size:14px;color:#616161;">The link works once, for {{.ExpiresIn}}. If you didn't ask to sign in, you can ignore this email: nobody can sign in without the link.</p>
+{{template "layout_bottom" .}}

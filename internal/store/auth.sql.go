@@ -136,13 +136,16 @@ func (q *Queries) CreateWebAuthnChallenge(ctx context.Context, arg CreateWebAuth
 	return err
 }
 
-const deleteExpiredWebAuthnChallenges = `-- name: DeleteExpiredWebAuthnChallenges :exec
+const deleteExpiredWebAuthnChallenges = `-- name: DeleteExpiredWebAuthnChallenges :execrows
 DELETE FROM webauthn_challenges WHERE expires_at <= now()
 `
 
-func (q *Queries) DeleteExpiredWebAuthnChallenges(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredWebAuthnChallenges)
-	return err
+func (q *Queries) DeleteExpiredWebAuthnChallenges(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredWebAuthnChallenges)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const emailExists = `-- name: EmailExists :one

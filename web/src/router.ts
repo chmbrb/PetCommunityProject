@@ -8,6 +8,8 @@ export default createRouter({
     { path: '/', name: 'home', component: HomeView },
     { path: '/signup', name: 'signup', component: () => import('./views/SignUpView.vue') },
     { path: '/signin', name: 'signin', component: () => import('./views/SignInView.vue') },
+    { path: '/signin/email', name: 'signin-email', component: () => import('./views/EmailSignInView.vue') },
+    { path: '/verify-email', name: 'verify-email', component: () => import('./views/VerifyEmailView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') },
   ],
 })
