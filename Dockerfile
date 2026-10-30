@@ -23,7 +23,7 @@ EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/petcommunity"]
 CMD ["serve"]
 
-FROM docker.io/library/node:24-slim AS web-build
+FROM docker.io/library/node:25-slim AS web-build
 WORKDIR /src/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
