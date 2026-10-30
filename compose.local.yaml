@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Runs the production stack (compose.yaml) on this machine, with all email caught by
+# Mailpit instead of a real provider. Use `make local-up`, then open
+# https://localhost:8443 (Caddy's local certificate) and http://localhost:8025 (Mailpit).
+#
+# The app runs in production mode, so it uses the same settings and safety checks as a
+# real instance. Production refuses unencrypted SMTP, so Mailpit speaks STARTTLS with a
+# certificate from a throwaway local CA (deploy/local/make-certs.sh), which the worker
+# is told to trust. Certificate verification stays on.
+services:
+  caddy:
+    # Unprivileged port, so rootless Podman can bind it.
+    ports: !override
+      - "127.0.0.1:8443:443"
+
+  app:
+    environment:
+      # The site is reached on port 8443, not 443.
+      PC_PUBLIC_URL: https://localhost:8443
+      PC_WEBAUTHN_ORIGINS: https://localhost:8443
+
+  worker:
+    environment:
+      PC_PUBLIC_URL: https://localhost:8443
+      PC_SMTP_CA_FILE: /certs/ca.crt
+    volumes:
+      - ./deploy/local/certs/ca.crt:/certs/ca.crt:ro,z
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.32.0@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+    environment:
+      MP_SMTP_TLS_CERT: /certs/mailpit.crt
+      MP_SMTP_TLS_KEY: /certs/mailpit.key
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+    volumes:
+      - ./deploy/local/certs:/certs:ro,z
+    ports:
+      - "127.0.0.1:8025:8025" # web inbox
+    networks: [edge]
+    restart: unless-stopped

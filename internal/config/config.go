@@ -79,6 +79,11 @@ type Mail struct {
 	Security MailSecurity
 	// From is the sender, e.g. "Example Pet Community <noreply@pets.example.org>".
 	From string
+	// CAFile is an optional PEM file of extra certificate authorities to trust for the
+	// SMTP connection, in addition to the system's. It's for testing the production
+	// setup against a local mail catcher (compose.local.yaml); providers don't need it.
+	// Certificates are always verified.
+	CAFile string
 }
 
 // RateLimits groups the request rate limits. A policy with zero Burst is disabled.
@@ -132,6 +137,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Mail.Password = getenv("PC_SMTP_PASSWORD")
 	cfg.Mail.Security = MailSecurity(valueOr(getenv("PC_SMTP_SECURITY"), string(cfg.Mail.Security)))
 	cfg.Mail.From = valueOr(getenv("PC_MAIL_FROM"), cfg.Mail.From)
+	cfg.Mail.CAFile = getenv("PC_SMTP_CA_FILE")
 
 	var parseErrs []error
 	if v := getenv("PC_TRUST_PROXY"); v != "" {
@@ -190,6 +196,9 @@ func (c Config) validate() error {
 	}
 	if c.Mail.From == "" {
 		errs = append(errs, errors.New("PC_MAIL_FROM is required"))
+	}
+	if c.Mail.CAFile != "" && c.Mail.Security == MailNone {
+		errs = append(errs, errors.New("PC_SMTP_CA_FILE needs PC_SMTP_SECURITY=starttls or tls"))
 	}
 
 	if c.Env == Production {
