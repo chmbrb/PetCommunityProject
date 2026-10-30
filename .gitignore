@@ -1,0 +1,11 @@
+# Local configuration and secrets
+.env
+*.local
+
+# Build output
+/bin/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

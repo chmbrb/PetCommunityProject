@@ -1,0 +1,10 @@
+.git
+.github
+docs
+tools
+web/node_modules
+web/dist
+web/android
+web/ios
+*.env
+.env

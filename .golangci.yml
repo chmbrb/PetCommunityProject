@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - unconvert
+  settings:
+    errcheck:
+      # Writes to stdout/stderr and closing read-side resources can't usefully be handled.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.ReadCloser).Close
+        - (*database/sql.DB).Close
+    gosec:
+      excludes:
+        - G104 # unhandled errors: covered by errcheck, with the exclusions above
+  exclusions:
+    generated: strict
+    rules:
+      # Tests may use simplified error handling and fixed inputs.
+      - path: _test\.go
+        linters: [gosec, noctx]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/chmbrb/PetCommunityProject

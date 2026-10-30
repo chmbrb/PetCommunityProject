@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Local development services. The Go API and the Vite dev server run on the host
+# (see docs/DEVELOPMENT.md). Not for production: credentials are fixed and public.
+name: petcommunity-dev
+
+services:
+  db:
+    image: docker.io/postgis/postgis:18-3.6
+    environment:
+      POSTGRES_USER: petcommunity
+      POSTGRES_PASSWORD: dev-only-password
+      POSTGRES_DB: petcommunity
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+      # Creates the petcommunity_test database used by integration tests.
+      - ./deploy/dev/initdb:/docker-entrypoint-initdb.d:ro,z
+    healthcheck:
+      # TCP check: during first-run initialization Postgres runs a temporary
+      # server on the Unix socket only, which would pass a socket check too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U petcommunity -d petcommunity"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # MinIO for local development only (ADR 0010). The upstream community images are no
+  # longer published, so this uses Chainguard's maintained build, pinned by digest.
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:e234321fd3abff7fb968b0674056e883b702aa1ad93a0d4d795cb6c21fa46407
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: petcommunity
+      MINIO_ROOT_PASSWORD: dev-only-password
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+
+  # Creates the media and quarantine buckets, retrying until MinIO is up.
+  minio-init:
+    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    depends_on:
+      - minio
+    environment:
+      MC_HOST_local: http://petcommunity:dev-only-password@minio:9000
+    command: ["mb", "--ignore-existing", "local/media", "local/quarantine"]
+    restart: on-failure
+
+volumes:
+  db-data:
+  minio-data:
