@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
@@ -29,13 +30,20 @@ func (f *fakeStore) ListFeatureFlags(context.Context) ([]store.ListFeatureFlagsR
 	return f.flags, f.flagsErr
 }
 
+// noAuth is an AuthService for tests that don't sign in.
+type noAuth struct{ AuthService }
+
+func (noAuth) Authenticate(context.Context, string) (auth.Principal, error) {
+	return auth.Principal{}, auth.ErrUnauthenticated
+}
+
 func newTestServer(st Store) http.Handler {
 	cfg := config.Config{
 		InstanceName:   "Test Instance",
 		InstanceDomain: "pets.example.org",
 		SourceURL:      config.DefaultSourceURL,
 	}
-	return New(cfg, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(cfg, st, noAuth{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {

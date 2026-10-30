@@ -5,12 +5,71 @@
 package store
 
 import (
+	"time"
+
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type Account struct {
+	ID                 uuid.UUID
+	Email              string
+	EmailVerifiedAt    *time.Time
+	WebauthnUserHandle []byte
+	Status             string
+	CreatedAt          time.Time
+	LastActiveAt       *time.Time
+}
+
+type Actor struct {
+	ID          uuid.UUID
+	Type        string
+	Handle      string
+	DisplayName string
+	Summary     string
+	AccountID   uuid.NullUUID
+	CreatedAt   time.Time
+}
+
+type AuthIdentity struct {
+	ID         uuid.UUID
+	AccountID  uuid.UUID
+	Kind       string
+	Provider   pgtype.Text
+	Subject    pgtype.Text
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+}
 
 type InstanceFeatureFlag struct {
 	Flag      string
 	Enabled   bool
 	Config    []byte
-	UpdatedAt pgtype.Timestamptz
+	UpdatedAt time.Time
+}
+
+type PasskeyCredential struct {
+	IdentityID   uuid.UUID
+	CredentialID []byte
+	Credential   []byte
+	Name         string
+}
+
+type Session struct {
+	ID         uuid.UUID
+	TokenHash  []byte
+	AccountID  uuid.UUID
+	Client     string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
+}
+
+type WebauthnChallenge struct {
+	ID        uuid.UUID
+	Purpose   string
+	Session   []byte
+	Signup    []byte
+	ExpiresAt time.Time
 }

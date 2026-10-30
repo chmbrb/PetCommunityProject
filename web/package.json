@@ -17,6 +17,7 @@
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0",
     "@mdi/js": "7.4.47",
+    "@simplewebauthn/browser": "14.0.0",
     "vue": "3.5.44",
     "vue-router": "5.4.0",
     "vuetify": "4.3.1"

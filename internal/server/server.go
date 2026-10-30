@@ -27,17 +27,25 @@ type Store interface {
 type Server struct {
 	cfg    config.Config
 	store  Store
+	auth   AuthService
 	logger *slog.Logger
 }
 
 // New returns the application's HTTP handler.
-func New(cfg config.Config, st Store, logger *slog.Logger) http.Handler {
-	s := &Server{cfg: cfg, store: st, logger: logger}
+func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) http.Handler {
+	s := &Server{cfg: cfg, store: st, auth: authSvc, logger: logger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /api/v1/instance", s.handleInstance)
+
+	mux.HandleFunc("POST /api/v1/auth/signup/begin", s.handleSignupBegin)
+	mux.HandleFunc("POST /api/v1/auth/signup/finish", s.handleSignupFinish)
+	mux.HandleFunc("POST /api/v1/auth/login/begin", s.handleLoginBegin)
+	mux.HandleFunc("POST /api/v1/auth/login/finish", s.handleLoginFinish)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /api/v1/me", s.handleMe)
 
 	return chain(mux,
 		s.requestID,
@@ -45,8 +53,10 @@ func New(cfg config.Config, st Store, logger *slog.Logger) http.Handler {
 		s.recoverPanics,
 		securityHeaders,
 		nativeAppCORS,
+		crossOriginProtection(),
 		limitBody(maxRequestBody),
 		jsonRoutingErrors,
+		s.authenticate,
 	)
 }
 
@@ -101,6 +111,8 @@ type errorBody struct {
 type errorDetail struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Field names the invalid input field, when there is one.
+	Field string `json:"field,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

@@ -145,6 +145,23 @@ func (w *routingErrorWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// crossOriginProtection rejects cross-origin state-changing requests from browsers,
+// which protects cookie sessions against CSRF (ADR 0014). It uses the browser's
+// Sec-Fetch-Site and Origin headers rather than tokens. The native apps' origins are
+// trusted; they authenticate with bearer tokens, which can't be sent cross-site.
+func crossOriginProtection() middleware {
+	cop := http.NewCrossOriginProtection()
+	for origin := range nativeAppOrigins {
+		if err := cop.AddTrustedOrigin(origin); err != nil {
+			panic(err)
+		}
+	}
+	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusForbidden, "cross_origin_request", "cross-origin request rejected")
+	}))
+	return cop.Handler
+}
+
 // nativeAppOrigins are the origins the Capacitor apps load from (ADR 0018).
 // The web app is same-origin and needs no CORS.
 var nativeAppOrigins = map[string]bool{

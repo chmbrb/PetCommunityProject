@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, fetchInstance, resolveApiBase } from './client'
+import { ApiError, fetchInstance, fetchMe, resolveApiBase } from './client'
 
 describe('resolveApiBase', () => {
   it('uses relative URLs on the web', () => {
@@ -31,5 +31,24 @@ describe('fetchInstance', () => {
     await expect(fetchInstance(fetchImpl)).rejects.toMatchObject(
       new ApiError(500, 'internal', 'internal error'),
     )
+  })
+})
+
+describe('fetchMe', () => {
+  it('returns null when nobody is signed in', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'unauthenticated', message: 'not signed in' } }), { status: 401 }),
+    )
+    await expect(fetchMe(fetchImpl)).resolves.toBeNull()
+  })
+
+  it('keeps the invalid field from validation errors', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: 'validation_failed', message: 'bad', field: 'email' } }),
+        { status: 422 },
+      ),
+    )
+    await expect(fetchMe(fetchImpl)).rejects.toMatchObject({ status: 422, field: 'email' })
   })
 })
