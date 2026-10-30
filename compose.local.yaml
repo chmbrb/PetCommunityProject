@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
     depends_on: [minio]
     environment:
       MC_HOST_local: http://${LOCAL_MINIO_USER}:${LOCAL_MINIO_PASSWORD}@minio:9000
@@ -70,7 +70,7 @@ services:
     restart: on-failure
 
   minio-policy:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
     depends_on:
       minio-init:
         condition: service_completed_successfully

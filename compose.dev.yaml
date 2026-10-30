@@ -41,7 +41,7 @@ services:
 
   # Creates the media and quarantine buckets, retrying until MinIO is up.
   minio-init:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
     depends_on:
       - minio
     environment:
@@ -52,7 +52,7 @@ services:
   # Makes processed images publicly readable, as a hosted provider's public bucket
   # would be. The quarantine bucket stays private.
   minio-policy:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
     depends_on:
       minio-init:
         condition: service_completed_successfully
