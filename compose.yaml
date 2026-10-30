@@ -107,8 +107,23 @@ services:
       POSTGRES_USER: petcommunity
       POSTGRES_PASSWORD: ${PC_DB_PASSWORD:?set PC_DB_PASSWORD in .env}
       POSTGRES_DB: petcommunity
+    # Continuous archiving (ADR 0016). Each finished WAL file is copied into the spool
+    # folder on the backup disk (via a temporary name, so it appears complete or not at
+    # all); the backup container encrypts it into the backup store. This container
+    # never runs WAL-G or sees the backup key.
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /wal-spool/%f && cp %p /wal-spool/%f.tmp && mv /wal-spool/%f.tmp /wal-spool/%f
+      - -c
+      - archive_timeout=60
     volumes:
       - db-data:/var/lib/postgresql
+      # The Unix socket, shared with the backup container, which has no network.
+      - pg-socket:/var/run/postgresql
+      - ${PC_BACKUP_DIR:?set PC_BACKUP_DIR in .env}/wal-spool:/wal-spool:z
     healthcheck:
       # TCP check: during first-run initialization Postgres runs a temporary
       # server on the Unix socket only, which would pass a socket check too early.
@@ -116,8 +131,67 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    depends_on:
+      backup-init:
+        condition: service_completed_successfully
     networks: [backend]
     restart: unless-stopped
+
+  # Prepares the backup folders on the backup disk with the right owner.
+  backup-init:
+    build:
+      context: .
+      target: backup
+    image: petcommunity-backup:local
+    user: root
+    # ":z" lets SELinux hosts (e.g. Fedora) share the folder with containers; other
+    # hosts ignore it.
+    entrypoint: ["sh", "-c", "mkdir -p /backups/walg /backups/wal-spool && chown 999:999 /backups /backups/walg /backups/wal-spool && chmod 700 /backups/walg /backups/wal-spool"]
+    volumes:
+      - ${PC_BACKUP_DIR:?set PC_BACKUP_DIR in .env}:/backups:z
+    network_mode: none
+    restart: "no"
+
+  # Database backups (ADR 0016). No network at all: it reaches Postgres through the
+  # shared Unix socket and reads the data files read-only. It alone holds the backup
+  # key and writes to the backup store.
+  backup:
+    image: petcommunity-backup:local
+    environment: &backup-env
+      PC_BACKUP_KEY: ${PC_BACKUP_KEY:?set PC_BACKUP_KEY in .env}
+      PC_BACKUP_APP_DATABASE: petcommunity
+      PGUSER: petcommunity
+    volumes:
+      - db-data:/var/lib/postgresql:ro
+      - pg-socket:/var/run/postgresql
+      - ${PC_BACKUP_DIR:?set PC_BACKUP_DIR in .env}:/backups:z
+      - ${PC_BACKUP_DIR:?set PC_BACKUP_DIR in .env}/wal-spool:/wal-spool:z
+      - backup-scratch:/scratch
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/pc-backup", "health"]
+      interval: 60s
+      timeout: 20s
+      start_period: 15m
+    depends_on:
+      db:
+        condition: service_healthy
+    network_mode: none
+    restart: unless-stopped
+
+  # Restores the database from backups. Not part of the running stack; see
+  # docs/DEVELOPMENT.md ("Restoring from a backup").
+  backup-restore:
+    image: petcommunity-backup:local
+    profiles: [restore]
+    command: ["restore"]
+    # Starts as root only to move the current data aside, then drops to postgres.
+    user: root
+    environment: *backup-env
+    volumes:
+      - db-data:/var/lib/postgresql
+      - pg-socket:/var/run/postgresql
+      - ${PC_BACKUP_DIR:?set PC_BACKUP_DIR in .env}:/backups:z
+    network_mode: none
 
 networks:
   edge: {}
@@ -129,3 +203,5 @@ volumes:
   caddy-data:
   caddy-config:
   db-data:
+  pg-socket:
+  backup-scratch:

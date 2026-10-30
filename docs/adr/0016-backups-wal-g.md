@@ -28,6 +28,19 @@ The project requires backup workflows that meet stated recovery targets (RPO: ho
 
 **Recovery targets:** not decided yet (PLAN.md open questions). The design allows an RPO of about a minute for the local copy; the off-site RPO depends on the sync interval.
 
+### As built (Phase 1)
+
+The off-site copy is deferred; Phase 1 builds copies 1 and 2.
+
+- **A separate backup container with no network** (`network_mode: none`). It reaches Postgres only through Postgres's Unix socket, shared as a volume, and reads the data files through a read-only mount. It alone holds the backup key (`PC_BACKUP_KEY`) and writes to the backup store.
+- **The database container never runs WAL-G** and never sees the key or the store. Its `archive_command` copies each finished WAL file (via a temporary name) into a spool folder on the backup disk; the backup container encrypts and stores it within about 10 seconds. RPO is about a minute (`archive_timeout` is 60 seconds).
+- **Backup folder:** `PC_BACKUP_DIR`, a host folder holding the encrypted WAL-G store (`walg/`), the WAL spool (`wal-spool/`), and a `status` file. For now it's on the VPS's own disk: that covers mistakes and bad data through point-in-time restore, but not losing the disk or the VPS. The planned second copy is a server the operator runs locally, which **pulls** the encrypted store from the VPS on a schedule (so a compromised VPS can't delete it); see DEVELOPMENT.md.
+- **Schedule and retention:** a base backup when none exists, then every 24 hours; the last 7 base backups are kept, with the WAL needed to restore any point since the oldest. (Weekly retention comes with the off-site copy.)
+- **Restore drills:** the backup container restores the latest backup into a scratch copy weekly (and an hour after a failed drill), checks the app's tables, and deletes the copy. `pc-backup verify` runs one on demand.
+- **Monitoring:** the container's health check fails if the service loop stops, the last base backup is over 26 hours old, WAL is piling up in the spool, Postgres can't write to the spool, the last drill failed, or the backup disk is under 10% free. Alert emails and an admin dashboard come later.
+- **Restore:** a separate one-off `backup-restore` service (also no network) restores the latest backup, optionally to a point in time, while the database is stopped. It moves the current data aside rather than deleting it.
+- **Not yet built:** off-site sync, weekly retention, alert emails, and a CI restore drill.
+
 ## Consequences
 
 - Point-in-time recovery protects against mistakes (e.g. a bad migration) as well as hardware loss.

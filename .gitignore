@@ -1,6 +1,7 @@
 # Local configuration and secrets
 .env
 /deploy/local/certs/
+/.local-backups/
 *.local
 
 # Build output

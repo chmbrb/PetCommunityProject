@@ -127,6 +127,50 @@ The image codecs must use their memory-safe Go builds: always build with `-tags 
 
 No abuse-imagery scanning service is connected yet (ADR 0011), so only accounts with a confirmed email can upload. In development, MinIO serves images at http://localhost:9000/media/, and the local production stack serves them through Caddy at https://localhost:8443/media/.
 
+### Backups
+
+The `backup` container backs up the database continuously (ADR 0016). It has no network at all: it reaches Postgres through its Unix socket and reads the data files read-only. Only it holds `PC_BACKUP_KEY` and can write to the backup store.
+
+**Setup:** point `PC_BACKUP_DIR` in `.env` at a folder for backups, and set `PC_BACKUP_KEY` (`openssl rand -base64 32`). **Keep an offline copy of `PC_BACKUP_KEY`** with `PC_SECRET_KEY`: backups can't be restored without it. The first base backup is taken a few seconds after the stack starts.
+
+**Where the backups live matters.** A folder on the server's own disk protects against mistakes and bad data (accidental deletes, a bad migration, corruption) through point-in-time restore. It doesn't survive losing the disk or the server. For that, also copy `PC_BACKUP_DIR` to another machine (see "Copying backups to another machine") or put it on a separate disk. On a shared disk, the backup health check's free-space warning also warns about the database's disk.
+
+#### Copying backups to another machine
+
+The backup store is plain encrypted files, so any file-sync tool can copy it. The recommended way is to have the other machine (for example a server at home) **pull** from the VPS on a schedule, rather than the VPS pushing:
+
+```sh
+# On the other machine, e.g. hourly from cron or a systemd timer:
+rsync -a --delete-delay vps-backup@your-vps:/var/backups/petcommunity/walg/ /srv/petcommunity-backups/walg/
+```
+
+- Pulling means the VPS holds no credentials to the other machine, so someone who takes over the VPS can't delete the remote copy. Keep older copies on the other machine too (snapshots, or rsync's `--backup-dir`), so a damaged source can't overwrite every good copy.
+- Use a dedicated SSH user on the VPS that can only read `PC_BACKUP_DIR` (an `rrsync`-restricted key works well). Copy `walg/` only; the spool is transient.
+- The files are encrypted with `PC_BACKUP_KEY`, so the other machine never needs the key. Keep the key offline, not alongside the copy.
+- To restore from the copy, put it back into `PC_BACKUP_DIR/walg/` on a server and follow "Restoring from a backup".
+
+**Checking:** `docker compose ps` shows the `backup` container as unhealthy if backups fall behind (see ADR 0016 for what it checks). Useful commands:
+
+```sh
+docker compose exec backup pc-backup list     # base backups
+docker compose exec backup pc-backup verify   # restore drill into a scratch copy
+docker compose exec backup pc-backup backup   # take a base backup now
+docker compose exec backup pc-backup health
+```
+
+Drills also run automatically every week. On the local stack: `make local-backup-list`, `make local-backup-drill`.
+
+#### Restoring from a backup
+
+```sh
+docker compose stop app worker backup db
+docker compose run --rm backup-restore restore                              # latest state
+docker compose run --rm backup-restore restore "2026-10-30 14:05:00+00"     # or a point in time
+docker compose up -d
+```
+
+The current data is moved aside to `before-restore-<time>` inside the database volume, not deleted; remove it once you've confirmed the restore. After restoring, a fresh base backup is taken automatically.
+
 ### Instance secret
 
 `PC_SECRET_KEY` (32 random bytes, base64) encrypts actors' private signing keys (ADR 0012). Generate it once with `openssl rand -base64 32` and put it in `.env`. Only the worker gets it; the API never needs it.

@@ -1,0 +1,235 @@
+#!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Database backups with WAL-G (ADR 0016), run in the network-less backup container.
+#
+# The database container never runs WAL-G and never sees the backup key or the backup
+# store: its archive_command only copies each finished WAL file into the spool folder
+# on the backup disk. This container encrypts spooled WAL into the store, takes nightly
+# base backups through Postgres's Unix socket, applies retention, and regularly proves
+# that the backups restore.
+#
+# Commands:
+#   run                   the service loop (default)
+#   backup                take a base backup now
+#   list                  list base backups
+#   verify                restore the latest backup into a scratch copy and check it
+#   restore [TIME]        restore into the database volume (database must be stopped);
+#                         TIME is an optional recovery target, e.g. "2026-10-30 14:05:00+00"
+#   health                exit 0 if backups are current (container health check)
+set -euo pipefail
+
+: "${PC_BACKUP_KEY:?PC_BACKUP_KEY is required (32 random bytes, base64)}"
+BACKUPS=/backups
+SPOOL=/wal-spool
+STATUS="$BACKUPS/status"
+PGDATA_DIR=/var/lib/postgresql/18/docker
+RETAIN_FULL="${PC_BACKUP_RETAIN_FULL:-7}"
+BASE_BACKUP_EVERY="${PC_BACKUP_BASE_INTERVAL_SECONDS:-86400}"
+VERIFY_EVERY="${PC_BACKUP_VERIFY_INTERVAL_SECONDS:-604800}"
+# The app's database (POSTGRES_DB), checked after restore drills.
+APP_DB="${PC_BACKUP_APP_DATABASE:-postgres}"
+
+export WALG_FILE_PREFIX="$BACKUPS/walg"
+export WALG_LIBSODIUM_KEY="$PC_BACKUP_KEY"
+export WALG_LIBSODIUM_KEY_TRANSFORM=base64
+export WALG_COMPRESSION_METHOD=lz4
+# Postgres is reached only through its Unix socket, shared as a volume. PGPORT and
+# PGDATABASE must be set, or WAL-G falls back to TCP on localhost.
+# PGUSER is the database superuser (POSTGRES_USER), set by Compose.
+export PGHOST=/var/run/postgresql PGPORT=5432 PGUSER="${PGUSER:-postgres}" PGDATABASE=postgres
+
+log() { printf '%s pc-backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
+
+status_get() { sed -n "s/^$1=//p" "$STATUS" 2>/dev/null | tail -1; }
+status_set() {
+	local tmp="$STATUS.tmp"
+	{ grep -v "^$1=" "$STATUS" 2>/dev/null || true; echo "$1=$2"; } >"$tmp"
+	mv "$tmp" "$STATUS"
+}
+
+# push_wal encrypts every spooled WAL file into the store, oldest first, deleting each
+# only after WAL-G confirms it's stored.
+push_wal() {
+	local f pushed=0
+	# WAL file names sort in the order they were written.
+	while IFS= read -r f; do
+		if wal-g wal-push "$f" >/dev/null 2>&1; then
+			rm -f "$f"
+			pushed=$((pushed + 1))
+		else
+			log "WAL push failed for $(basename "$f"); will retry"
+			return 1
+		fi
+	done < <(find "$SPOOL" -maxdepth 1 -type f ! -name '*.tmp' | sort)
+	if [ "$pushed" -gt 0 ]; then
+		status_set last_wal_push "$(date +%s)"
+	fi
+}
+
+base_backup() {
+	log "starting base backup"
+	wal-g backup-push "$PGDATA_DIR"
+	status_set last_base_backup "$(date +%s)"
+	# A base backup is restorable only once the WAL segment that ends it is stored;
+	# Postgres archives that segment right after the backup, so push it promptly.
+	sleep 5
+	push_wal || true
+	wal-g delete retain FULL "$RETAIN_FULL" --confirm >/dev/null
+	rm -f "$BACKUPS/needs-base-backup"
+	log "base backup done; keeping the last $RETAIN_FULL"
+}
+
+# recover restores the latest base backup into dir and replays WAL up to target (or
+# the end), then promotes it. It runs Postgres with no TCP listener.
+recover() {
+	local dir="$1" target="${2:-}"
+	mkdir -p "$dir"
+	chmod 700 "$dir"
+	wal-g backup-fetch "$dir" LATEST
+	touch "$dir/recovery.signal"
+	{
+		echo "restore_command = 'wal-g wal-fetch %f %p'"
+		echo "recovery_target_action = 'promote'"
+		echo "archive_mode = 'off'"
+		if [ -n "$target" ]; then echo "recovery_target_time = '$target'"; fi
+	} >>"$dir/postgresql.auto.conf"
+	pg_ctl -D "$dir" -o "-c listen_addresses= -c unix_socket_directories=/tmp" -w -t 600 -l "$dir/recovery.log" start >/dev/null
+	local _
+	for _ in $(seq 1 600); do
+		if ! pg_ctl -D "$dir" status >/dev/null; then
+			log "recovery failed; see $dir/recovery.log"
+			return 1
+		fi
+		if [ "$(psql -h /tmp -Atc 'select pg_is_in_recovery()' 2>/dev/null)" = "f" ]; then return 0; fi
+		sleep 1
+	done
+	log "recovery didn't finish in 10 minutes; see $dir/recovery.log"
+	return 1
+}
+
+# verify is the restore drill: it restores into a scratch folder, checks the result,
+# and deletes it. Nothing touches the live database.
+verify() {
+	local scratch=/scratch/verify
+	rm -rf "$scratch"
+	push_wal || true
+	log "restore drill: restoring the latest backup into a scratch copy"
+	if ! recover "$scratch"; then
+		pg_ctl -D "$scratch" -m immediate stop >/dev/null 2>&1 || true
+		status_set last_verify "$(date +%s) failed"
+		return 1
+	fi
+	local accounts migrations
+	accounts=$(psql -h /tmp -d "$APP_DB" -Atc 'select count(*) from accounts' 2>/dev/null || echo "?")
+	migrations=$(psql -h /tmp -d "$APP_DB" -Atc 'select max(version_id) from goose_db_version' 2>/dev/null || echo "?")
+	pg_ctl -D "$scratch" -w stop >/dev/null
+	rm -rf "$scratch"
+	if [ "$accounts" = "?" ] || [ "$migrations" = "?" ]; then
+		log "restore drill FAILED: the restored database is missing expected tables"
+		status_set last_verify "$(date +%s) failed"
+		return 1
+	fi
+	log "restore drill passed: $accounts accounts, schema version $migrations"
+	status_set last_verify "$(date +%s) ok"
+}
+
+run() {
+	log "backup service started; store $WALG_FILE_PREFIX, keeping $RETAIN_FULL base backups"
+	while true; do
+		status_set heartbeat "$(date +%s)"
+		push_wal || true
+		local now last_base last_verify
+		now=$(date +%s)
+		last_base=$(status_get last_base_backup)
+		if [ -z "$last_base" ] || [ $((now - last_base)) -ge "$BASE_BACKUP_EVERY" ] || [ -e "$BACKUPS/needs-base-backup" ]; then
+			if pg_isready -q; then
+				base_backup || log "base backup failed; will retry"
+			fi
+		fi
+		# Drill weekly, or an hour after a failed drill, once the latest base backup is
+		# a few minutes old (so the WAL that completes it has been stored).
+		last_base=$(status_get last_base_backup)
+		last_verify=$(status_get last_verify | cut -d' ' -f1)
+		local wait="$VERIFY_EVERY"
+		case "$(status_get last_verify)" in *failed) wait=3600 ;; esac
+		if [ -n "$last_base" ] && [ $((now - last_base)) -ge 300 ] &&
+			{ [ -z "$last_verify" ] || [ $((now - last_verify)) -ge "$wait" ]; }; then
+			verify || true
+		fi
+		sleep 10
+	done
+}
+
+# health fails when backups have fallen behind, so `docker compose ps` shows the
+# container as unhealthy.
+health() {
+	local now problems=()
+	now=$(date +%s)
+	local hb base verify spooled free
+	hb=$(status_get heartbeat)
+	base=$(status_get last_base_backup)
+	verify=$(status_get last_verify)
+	spooled=$(find "$SPOOL" -maxdepth 1 -type f | wc -l)
+	[ -n "$hb" ] && [ $((now - hb)) -lt 300 ] || problems+=("service loop not running")
+	[ -n "$base" ] && [ $((now - base)) -lt $((BASE_BACKUP_EVERY + 7200)) ] || problems+=("no recent base backup")
+	[ "$spooled" -lt 60 ] || problems+=("$spooled WAL files waiting to be stored")
+	case "$verify" in *failed) problems+=("last restore drill failed") ;; esac
+	if [ "$(psql -Atc "select coalesce(last_failed_time > coalesce(last_archived_time, 'epoch'), false) from pg_stat_archiver" 2>/dev/null)" = "t" ]; then
+		problems+=("Postgres can't write WAL to the spool folder")
+	fi
+	free=$(df -P "$BACKUPS" | awk 'NR==2 { print 100 - $5 }')
+	[ "${free:-0}" -ge 10 ] || problems+=("backup disk is ${free}% free")
+	if [ ${#problems[@]} -gt 0 ]; then
+		printf 'unhealthy: %s\n' "$(IFS=';'; echo "${problems[*]}")"
+		return 1
+	fi
+	echo "healthy"
+}
+
+# restore starts as root, because only root can move the current data folder aside
+# (its parent belongs to root in the Postgres image); recovery itself runs as postgres.
+restore() {
+	local target="${1:-}"
+	if pg_isready -q 2>/dev/null; then
+		log "the database is running; stop it first: docker compose stop app worker backup db"
+		exit 1
+	fi
+	if [ "$(id -u)" != 0 ]; then
+		log "restore must start as root (the backup-restore service does)"
+		exit 1
+	fi
+	if [ -e "$PGDATA_DIR" ]; then
+		local keep
+		keep="/var/lib/postgresql/before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+		mv "$PGDATA_DIR" "$keep"
+		log "moved the current data to $keep in the database volume (delete it once the restore is confirmed)"
+	fi
+	install -d -o postgres -g postgres -m 700 "$PGDATA_DIR"
+	exec gosu postgres "$0" _recover "$target"
+}
+
+recover_into_pgdata() {
+	local target="${1:-}"
+	log "restoring the latest backup${target:+ up to $target}"
+	recover "$PGDATA_DIR" "$target"
+	pg_ctl -D "$PGDATA_DIR" -w stop >/dev/null
+	# The recovery settings were for this run only; the database restarts normally.
+	sed -i "/^restore_command\|^recovery_target\|^archive_mode = 'off'/d" "$PGDATA_DIR/postgresql.auto.conf"
+	touch "$BACKUPS/needs-base-backup"
+	log "restore done; start the stack again (docker compose up -d). A fresh base backup will be taken."
+}
+
+case "${1:-run}" in
+run) run ;;
+backup) push_wal && base_backup ;;
+list) wal-g backup-list --detail ;;
+verify) verify ;;
+restore) restore "${2:-}" ;;
+_recover) recover_into_pgdata "${2:-}" ;;
+health) health ;;
+*)
+	echo "usage: pc-backup [run|backup|list|verify|restore [TIME]|health]" >&2
+	exit 2
+	;;
+esac

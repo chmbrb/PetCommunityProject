@@ -120,5 +120,9 @@ jobs:
         run: docker build --target app --build-arg VERSION=${{ github.sha }} -t petcommunity-app:ci .
       - name: Build web image
         run: docker build --target web -t petcommunity-web:ci .
+      - name: Build backup image
+        run: docker build --target backup -t petcommunity-backup:ci .
       - name: Smoke test
-        run: docker run --rm petcommunity-app:ci version
+        run: |
+          docker run --rm petcommunity-app:ci version
+          docker run --rm --entrypoint wal-g petcommunity-backup:ci --version

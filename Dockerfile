@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Two images (ADR 0009):
-#   --target app   the Go binary (serve, migrate, healthcheck)
-#   --target web   Caddy with the built SPA and the production Caddyfile
+# Images (ADR 0009):
+#   --target app     the Go binary (serve, worker, migrate, healthcheck)
+#   --target web     Caddy with the built SPA and the production Caddyfile
+#   --target backup  the network-less database backup container (ADR 0016)
 
 FROM docker.io/library/golang:1.26 AS go-build
 WORKDIR /src
@@ -37,3 +38,29 @@ RUN pnpm build
 FROM docker.io/library/caddy:2.11-alpine AS web
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=web-build /src/web/dist /srv
+
+# WAL-G, downloaded for the target architecture and checked against its published
+# SHA-256 (ADR 0016).
+FROM docker.io/library/alpine:3.24 AS walg
+ARG TARGETARCH
+ARG WALG_VERSION=v3.0.9
+RUN case "$TARGETARCH" in \
+      amd64) arch=amd64; sum=444ce216230c254edef803e098a59a1746806da3e0d55671d7b0f0082db14ef4 ;; \
+      arm64) arch=aarch64; sum=cb37c5f8391bd8ef2efceeb9c6995059c0abf2fa74b9b717b42a16a7c93cfde1 ;; \
+      *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && wget -qO /walg.tgz "https://github.com/wal-g/wal-g/releases/download/${WALG_VERSION}/wal-g-pg-24.04-${arch}.tar.gz" \
+    && echo "${sum}  /walg.tgz" | sha256sum -c - \
+    && tar -xzf /walg.tgz -C / \
+    && mv "/wal-g-pg-24.04-${arch}" /wal-g
+
+# --target backup: the network-less backup container. It's the PostGIS image (the
+# same Postgres version as the database, for restores and drills) plus WAL-G.
+FROM docker.io/postgis/postgis:18-3.6 AS backup
+COPY --from=walg /wal-g /usr/local/bin/wal-g
+COPY deploy/backup/pc-backup /usr/local/bin/pc-backup
+# Scratch space for restore drills; a new volume mounted here inherits this owner.
+RUN mkdir /scratch && chown postgres:postgres /scratch
+USER postgres
+ENTRYPOINT ["/usr/local/bin/pc-backup"]
+CMD ["run"]
