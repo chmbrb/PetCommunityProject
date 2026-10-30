@@ -62,7 +62,7 @@ vuln: ## Scan Go dependencies for known vulnerabilities
 local-certs: ## Create the throwaway certificates for the local production stack
 	deploy/local/make-certs.sh
 
-local-up: local-certs ## Build and run the production stack locally (https://localhost:8443, mail at :8025)
+local-up: local-certs ## Build and run the production stack locally (https://localhost:8443, mail at :8026)
 	$(LOCAL_COMPOSE) up -d --build
 
 local-down: ## Stop the local production stack (keeps data)

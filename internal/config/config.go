@@ -4,6 +4,9 @@
 package config
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -25,6 +28,13 @@ const (
 // DevDatabasePassword is the password used by compose.dev.yaml. The app refuses
 // to start in production while it is still in use (ADR 0009).
 const DevDatabasePassword = "dev-only-password" //nolint:gosec // G101: public development password, rejected in production
+
+// DevSecretKey is the fixed secret key used in development when PC_SECRET_KEY isn't
+// set. It's public, so production refuses it.
+var DevSecretKey = func() []byte {
+	sum := sha256.Sum256([]byte("PetCommunityProject development secret key; never use in production"))
+	return sum[:]
+}()
 
 // DefaultSourceURL is where the unmodified source code lives. Operators running a
 // modified version must point PC_SOURCE_URL at their own source (AGPL section 13).
@@ -56,6 +66,22 @@ type Config struct {
 	PublicURL string
 	// Mail is how the worker sends email.
 	Mail Mail
+	// SecretKey (32 bytes, PC_SECRET_KEY) encrypts actors' private keys at rest
+	// (ADR 0012). Only the worker needs it; it's nil in production processes that
+	// weren't given it.
+	SecretKey []byte
+}
+
+// RequireSecretKey reports whether a usable secret key is configured, for processes
+// that encrypt or decrypt with it.
+func (c Config) RequireSecretKey() error {
+	if len(c.SecretKey) == 0 {
+		return errors.New("PC_SECRET_KEY is required; generate one with `openssl rand -base64 32`")
+	}
+	if c.Env == Production && bytes.Equal(c.SecretKey, DevSecretKey) {
+		return errors.New("PC_SECRET_KEY is the public development key; generate a real one for production")
+	}
+	return nil
 }
 
 // MailSecurity is how the connection to the SMTP server is protected.
@@ -138,6 +164,9 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Mail.Security = MailSecurity(valueOr(getenv("PC_SMTP_SECURITY"), string(cfg.Mail.Security)))
 	cfg.Mail.From = valueOr(getenv("PC_MAIL_FROM"), cfg.Mail.From)
 	cfg.Mail.CAFile = getenv("PC_SMTP_CA_FILE")
+	if cfg.Env != Production {
+		cfg.SecretKey = DevSecretKey
+	}
 
 	var parseErrs []error
 	if v := getenv("PC_TRUST_PROXY"); v != "" {
@@ -145,6 +174,13 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.TrustProxy, err = strconv.ParseBool(v); err != nil {
 			parseErrs = append(parseErrs, fmt.Errorf("PC_TRUST_PROXY must be true or false, got %q", v))
 		}
+	}
+	if v := getenv("PC_SECRET_KEY"); v != "" {
+		key, err := decodeSecretKey(v)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		cfg.SecretKey = key
 	}
 	if v := getenv("PC_SMTP_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
@@ -235,6 +271,20 @@ func webAuthnDefaults(env Environment, domain string) (rpID string, origins []st
 		return domain, []string{"https://" + domain}
 	}
 	return "localhost", []string{"http://localhost:5173", "http://localhost:8080"}
+}
+
+// decodeSecretKey accepts a 32-byte key in standard or URL-safe base64, padded or not.
+func decodeSecretKey(v string) ([]byte, error) {
+	v = strings.TrimSpace(v)
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if key, err := enc.DecodeString(v); err == nil {
+			if len(key) != 32 {
+				return nil, fmt.Errorf("PC_SECRET_KEY must be 32 bytes, got %d; generate one with `openssl rand -base64 32`", len(key))
+			}
+			return key, nil
+		}
+	}
+	return nil, errors.New("PC_SECRET_KEY must be base64; generate one with `openssl rand -base64 32`")
 }
 
 // publicURLDefault is the instance's site in production, and the Vite dev server in

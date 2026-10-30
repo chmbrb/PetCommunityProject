@@ -104,6 +104,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | I2 | Secrets leaked in a repo, image, or logs | M | H | Secrets from env or files, never committed; secret scanning in CI; PII redacted in logs | 1 |
 | I3 | Backup theft | L | H | Backups encrypted before upload; separate credentials with write-only/append-only permission where possible; restricted access | 1 |
 | I4 | Theft of shelters' import API keys | L | H | Encrypted at rest, used only by the import worker, never shown again after entry; shelters can revoke them; read-only keys where the vendor offers them | 2 |
+| I5 | Theft of actors' private signing keys (impersonation across the fediverse, Phase 5) | L | H | Encrypted at rest with AES-256-GCM under a key derived from `PC_SECRET_KEY`, bound to each actor's ID; only the worker holds the secret, so an API compromise or database dump alone doesn't expose them; the secret isn't in database backups | 1 |
 | D1 | DoS or resource exhaustion | M | M | API rate limits per client IP, applied before authentication so floods don't reach the database (IPv6 grouped by /64); request size limits; image decompression-bomb limits (max pixels); job queue concurrency caps | 1 |
 | E1 | Privilege escalation through role management | L | H | Only owners/admins grant roles; role changes are audited; elevated roles require MFA | 1 |
 

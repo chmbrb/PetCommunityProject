@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/chmbrb/PetCommunityProject/internal/actorkeys"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
 	"github.com/chmbrb/PetCommunityProject/internal/ratelimit"
@@ -230,10 +231,15 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 		}); err != nil {
 			return err
 		}
+		actorID := mustUUIDv7()
 		if err := q.CreatePersonActor(ctx, store.CreatePersonActorParams{
-			ID: mustUUIDv7(), Handle: in.Handle, DisplayName: in.DisplayName, AccountID: uuid.NullUUID{UUID: pending.AccountID, Valid: true},
+			ID: actorID, Handle: in.Handle, DisplayName: in.DisplayName, AccountID: uuid.NullUUID{UUID: pending.AccountID, Valid: true},
 		}); err != nil {
 			return err
+		}
+		// The worker creates the actor's signing keys; it holds the secret that encrypts them.
+		if _, err := s.queue.InsertTx(ctx, tx, actorkeys.Job{ActorID: actorID}, nil); err != nil {
+			return fmt.Errorf("queue actor keys: %w", err)
 		}
 		identityID := mustUUIDv7()
 		if err := q.CreateAuthIdentity(ctx, store.CreateAuthIdentityParams{

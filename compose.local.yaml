@@ -2,7 +2,7 @@
 #
 # Runs the production stack (compose.yaml) on this machine, with all email caught by
 # Mailpit instead of a real provider. Use `make local-up`, then open
-# https://localhost:8443 (Caddy's local certificate) and http://localhost:8025 (Mailpit).
+# https://localhost:8443 (Caddy's local certificate) and http://localhost:8026 (Mailpit).
 #
 # The app runs in production mode, so it uses the same settings and safety checks as a
 # real instance. Production refuses unencrypted SMTP, so Mailpit speaks STARTTLS with a
@@ -39,6 +39,7 @@ services:
     volumes:
       - ./deploy/local/certs:/certs:ro,z
     ports:
-      - "127.0.0.1:8025:8025" # web inbox
+      # 8026, so it can run alongside the development stack's Mailpit (8025).
+      - "127.0.0.1:8026:8025" # web inbox
     networks: [edge]
     restart: unless-stopped

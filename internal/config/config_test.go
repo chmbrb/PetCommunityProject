@@ -3,6 +3,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -74,6 +76,50 @@ func TestProductionMail(t *testing.T) {
 	prod["PC_SMTP_PORT"] = "smtps"
 	if _, err := Load(env(prod)); err == nil || !strings.Contains(err.Error(), "PC_SMTP_PORT") {
 		t.Errorf("invalid port: err = %v", err)
+	}
+}
+
+func TestSecretKey(t *testing.T) {
+	dev, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
+	if err != nil || dev.RequireSecretKey() != nil {
+		t.Fatalf("development falls back to the dev key: err %v, require %v", err, dev.RequireSecretKey())
+	}
+
+	prod := map[string]string{
+		"PC_ENV": "production", "PC_INSTANCE_DOMAIN": "pets.example.org", "PC_DATABASE_URL": "postgres://app:s3cret@db/app",
+		"PC_SMTP_HOST": "smtp.example.com", "PC_MAIL_FROM": "noreply@pets.example.org",
+	}
+	cfg, err := Load(env(prod))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RequireSecretKey() == nil {
+		t.Error("production without PC_SECRET_KEY: RequireSecretKey = nil, want an error")
+	}
+
+	prod["PC_SECRET_KEY"] = base64.StdEncoding.EncodeToString(DevSecretKey)
+	cfg, _ = Load(env(prod))
+	if err := cfg.RequireSecretKey(); err == nil || !strings.Contains(err.Error(), "development key") {
+		t.Errorf("production with the dev key: %v", err)
+	}
+
+	real := make([]byte, 32)
+	real[0] = 1
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawURLEncoding} {
+		prod["PC_SECRET_KEY"] = enc.EncodeToString(real)
+		cfg, err = Load(env(prod))
+		if err != nil || cfg.RequireSecretKey() != nil || !bytes.Equal(cfg.SecretKey, real) {
+			t.Errorf("valid key (%v): err %v, require %v", enc, err, cfg.RequireSecretKey())
+		}
+	}
+
+	prod["PC_SECRET_KEY"] = base64.StdEncoding.EncodeToString(real[:16])
+	if _, err := Load(env(prod)); err == nil || !strings.Contains(err.Error(), "32 bytes") {
+		t.Errorf("short key: err = %v", err)
+	}
+	prod["PC_SECRET_KEY"] = "not base64!"
+	if _, err := Load(env(prod)); err == nil || !strings.Contains(err.Error(), "base64") {
+		t.Errorf("non-base64 key: err = %v", err)
 	}
 }
 

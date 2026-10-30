@@ -19,6 +19,8 @@ From Phase 1, the data model follows ActivityPub's structure, but no federation 
 - Pet-specific listing fields live under a project JSON-LD namespace, to be defined in Phase 5.
 - Private data (applications, adopter profiles, verification evidence, moderation internals) is modeled so it can't be federated by accident: those entities are never Activities.
 
+**Actor keys, as built (Phase 1):** RSA-2048 key pairs, the type Mastodon and most fediverse software expect for HTTP Signatures (Ed25519 keys can be added alongside later). The public key is stored as PEM. The private key is encrypted with AES-256-GCM under a key derived (HKDF) from the instance secret `PC_SECRET_KEY`, bound to the actor's ID, with a key ID stored alongside to detect a wrong or rotated secret (`internal/actorkeys`). The worker generates keys: sign-up queues a job in the same transaction, and an hourly backfill covers any actor without keys. Only the worker holds `PC_SECRET_KEY`; the API process never sees private keys.
+
 ## Consequences
 
 - Phase 5 adds endpoints (WebFinger, inbox, outbox, HTTP signatures) and delivery jobs, rather than reworking the schema.

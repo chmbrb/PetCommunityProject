@@ -67,7 +67,10 @@ services:
   worker:
     image: petcommunity-app:local
     command: ["worker"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # Encrypts actors' private keys (ADR 0012). Only the worker gets it.
+      PC_SECRET_KEY: ${PC_SECRET_KEY:?set PC_SECRET_KEY in .env}
     read_only: true
     depends_on:
       migrate:
