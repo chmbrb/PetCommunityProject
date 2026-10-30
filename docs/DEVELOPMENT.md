@@ -140,6 +140,8 @@ The API limits requests per client IP address (IPv6 clients are grouped by /64 n
 
 Over the limit, the API answers `429 Too Many Requests` with a `Retry-After` header. Limits are kept in memory in the app process, which suits the single-host deployment; they reset when the app restarts.
 
+In development, everything comes from one address (localhost), so creating several test accounts quickly runs into the sign-up limit. Restart `make run` to reset it.
+
 The client IP comes from the TCP connection, or from `X-Forwarded-For` when `PC_TRUST_PROXY=true`. `compose.yaml` sets that because the app is reachable only through Caddy. Never enable it when clients can reach the app directly: they could then pick their own IP and evade the limits.
 
 ## Podman

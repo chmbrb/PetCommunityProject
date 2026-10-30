@@ -90,7 +90,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | # | Threat | L | I | Mitigations | Phase |
 |---|--------|---|---|-------------|-------|
 | S1 | Credential stuffing or phishing → account takeover | H | H | argon2id; rate limits and lockouts; check passwords against breached-password lists; **MFA required for verified orgs, moderators, and admins**; new-device login alerts | 1 |
-| S2 | Session theft | M | H | HttpOnly, Secure, SameSite cookies; short-lived sessions with rotation; revoke on password change | 1 |
+| S2 | Session theft | M | H | HttpOnly, Secure, SameSite cookies; short-lived sessions with rotation (signing in again replaces the old session); revoke on password change; people can see their signed-in devices and sign out any of them; adding or removing a passkey needs a sign-in within the last 15 minutes, so a stolen session can't quietly add its own passkey; email notice on every passkey change | 1 |
 | S3 | Account takeover through SSO account linking (attacker signs in with a provider account using the victim's email) | M | H | Never link by email automatically; linking requires signing in to the existing account and confirming; email alert and audit entry on link/unlink; match identities by provider + subject | 2 |
 | S4 | User's Google or Apple account is compromised | M | H | Platform passkey or TOTP still required for privileged roles; new-device alerts; users can unlink a provider and revoke sessions | 2 |
 | S5 | Flawed OIDC handling (missing state/nonce/audience checks, trusting unverified emails) | M | H | Maintained OIDC library; PKCE, state, nonce, issuer, and audience validation; only provider-verified emails; tests for each failure case | 2 |

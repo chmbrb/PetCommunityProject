@@ -71,7 +71,7 @@ const apiBase = () =>
   resolveApiBase(Capacitor.isNativePlatform(), import.meta.env.VITE_DEFAULT_INSTANCE_URL)
 
 async function request<T>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   fetchImpl: typeof fetch = fetch,
@@ -161,4 +161,57 @@ export function verifyEmail(token: string) {
 /** Sends another verification email to the signed-in account. */
 export function resendVerification() {
   return request<{ status: string }>('POST', '/api/v1/me/email/verification')
+}
+
+/** One of the signed-in account's passkeys. */
+export interface Passkey {
+  id: string
+  name: string
+  created_at: string
+  last_used_at: string | null
+  /** Synced between devices by a password manager. */
+  synced: boolean
+}
+
+/** A device signed in to the account. */
+export interface SessionInfo {
+  id: string
+  client: 'web' | 'mobile'
+  user_agent: string
+  created_at: string
+  last_seen_at: string
+  /** The device making the request. */
+  current: boolean
+}
+
+export async function listPasskeys() {
+  return (await request<{ passkeys: Passkey[] }>('GET', '/api/v1/me/passkeys')).passkeys
+}
+
+export function beginAddPasskey() {
+  return request<PasskeyChallenge<PublicKeyCredentialCreationOptionsJSON>>('POST', '/api/v1/me/passkeys/begin')
+}
+
+export function finishAddPasskey(challengeId: string, credential: RegistrationResponseJSON, name: string) {
+  return request<Passkey>('POST', '/api/v1/me/passkeys/finish', { challenge_id: challengeId, credential, name })
+}
+
+export function renamePasskey(id: string, name: string) {
+  return request<void>('PATCH', `/api/v1/me/passkeys/${encodeURIComponent(id)}`, { name })
+}
+
+export function removePasskey(id: string) {
+  return request<void>('DELETE', `/api/v1/me/passkeys/${encodeURIComponent(id)}`)
+}
+
+export async function listSessions() {
+  return (await request<{ sessions: SessionInfo[] }>('GET', '/api/v1/me/sessions')).sessions
+}
+
+export function revokeSession(id: string) {
+  return request<void>('DELETE', `/api/v1/me/sessions/${encodeURIComponent(id)}`)
+}
+
+export function revokeOtherSessions() {
+  return request<{ revoked: number }>('POST', '/api/v1/me/sessions/revoke-others')
 }

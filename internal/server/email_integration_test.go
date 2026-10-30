@@ -183,3 +183,12 @@ func TestSignInLinkRecipientLimit(t *testing.T) {
 		t.Errorf("sign-in emails queued = %d, want 2 (recipient limit)", n)
 	}
 }
+
+func mustUUID(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	id, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}

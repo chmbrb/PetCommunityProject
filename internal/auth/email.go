@@ -22,10 +22,13 @@ import (
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
-// Email purposes, matching email_tokens.purpose.
+// Email purposes. The first two carry a one-time link (matching email_tokens.purpose);
+// the others are security notices.
 const (
-	PurposeVerifyEmail = "verify_email"
-	PurposeSignIn      = "sign_in"
+	PurposeVerifyEmail    = "verify_email"
+	PurposeSignIn         = "sign_in"
+	PurposePasskeyAdded   = "passkey_added"
+	PurposePasskeyRemoved = "passkey_removed"
 )
 
 // QueueEmail is the job queue that sends email.
@@ -53,6 +56,8 @@ type JobQueue interface {
 type EmailJob struct {
 	AccountID uuid.UUID `json:"account_id"`
 	Purpose   string    `json:"purpose"`
+	// Detail is shown in notices, e.g. the passkey's name.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Kind identifies the job type to River.
@@ -215,6 +220,11 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 		return nil
 	}
 
+	switch job.Purpose {
+	case PurposePasskeyAdded, PurposePasskeyRemoved:
+		return e.sendNotice(ctx, acct, job)
+	}
+
 	var ttl time.Duration
 	var path, expiresIn string
 	var render func(string, pcmail.LinkEmail) (pcmail.Message, error)
@@ -248,6 +258,28 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 		DisplayName:  acct.DisplayName,
 		Link:         e.publicURL + path + "#token=" + token,
 		ExpiresIn:    expiresIn,
+	})
+	if err != nil {
+		return river.JobCancel(err)
+	}
+	if err := e.sender.Send(ctx, msg); err != nil {
+		return err
+	}
+	e.logger.InfoContext(ctx, "email sent", "purpose", job.Purpose, "account_id", acct.ID)
+	return nil
+}
+
+// sendNotice emails a security notice that links to the account settings.
+func (e *Emailer) sendNotice(ctx context.Context, acct store.GetAccountForEmailRow, job EmailJob) error {
+	render := pcmail.PasskeyAdded
+	if job.Purpose == PurposePasskeyRemoved {
+		render = pcmail.PasskeyRemoved
+	}
+	msg, err := render(acct.Email, pcmail.LinkEmail{
+		InstanceName: e.instanceName,
+		DisplayName:  acct.DisplayName,
+		Link:         e.publicURL + "/settings",
+		Detail:       job.Detail,
 	})
 	if err != nil {
 		return river.JobCancel(err)

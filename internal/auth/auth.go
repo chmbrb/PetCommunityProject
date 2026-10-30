@@ -13,7 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -67,6 +69,27 @@ type Principal struct {
 	AccountID uuid.UUID
 	SessionID uuid.UUID
 	Client    Client
+	// AuthenticatedAt is when this session signed in, for step-up checks.
+	AuthenticatedAt time.Time
+}
+
+type userAgentKey struct{}
+
+// WithUserAgent records the client's User-Agent header, so sessions created while
+// handling the request show which browser or app they belong to.
+func WithUserAgent(ctx context.Context, userAgent string) context.Context {
+	return context.WithValue(ctx, userAgentKey{}, userAgent)
+}
+
+// userAgentFrom returns the request's User-Agent, cleaned and cut to 256 bytes.
+func userAgentFrom(ctx context.Context) string {
+	ua, _ := ctx.Value(userAgentKey{}).(string)
+	ua = strings.ToValidUTF8(strings.TrimSpace(ua), "")
+	for len(ua) > 256 {
+		_, size := utf8.DecodeLastRuneInString(ua)
+		ua = ua[:len(ua)-size]
+	}
+	return ua
 }
 
 // Service implements sign-up, sign-in, and sessions.
@@ -156,7 +179,7 @@ func (s *Service) BeginSignup(ctx context.Context, in SignupInput) (uuid.UUID, *
 		return uuid.Nil, nil, fmt.Errorf("begin passkey registration: %w", err)
 	}
 
-	id, err := s.saveChallenge(ctx, "signup", session, &pending)
+	id, err := s.saveChallenge(ctx, "signup", session, &pending, uuid.Nil)
 	if err != nil {
 		return uuid.Nil, nil, err
 	}
@@ -219,7 +242,7 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 			return err
 		}
 		if err := q.CreatePasskeyCredential(ctx, store.CreatePasskeyCredentialParams{
-			IdentityID: identityID, CredentialID: cred.ID, Credential: credJSON,
+			IdentityID: identityID, CredentialID: cred.ID, Credential: credJSON, Name: "Passkey",
 		}); err != nil {
 			return err
 		}
@@ -243,7 +266,7 @@ func (s *Service) BeginLogin(ctx context.Context) (uuid.UUID, *protocol.PublicKe
 	if err != nil {
 		return uuid.Nil, nil, fmt.Errorf("begin passkey login: %w", err)
 	}
-	id, err := s.saveChallenge(ctx, "login", session, nil)
+	id, err := s.saveChallenge(ctx, "login", session, nil, uuid.Nil)
 	if err != nil {
 		return uuid.Nil, nil, err
 	}
@@ -349,7 +372,9 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 			s.logger.WarnContext(ctx, "touch account", "error", err)
 		}
 	}
-	return Principal{AccountID: row.AccountID, SessionID: row.ID, Client: Client(row.Client)}, nil
+	return Principal{
+		AccountID: row.AccountID, SessionID: row.ID, Client: Client(row.Client), AuthenticatedAt: row.CreatedAt,
+	}, nil
 }
 
 // SignOut revokes a session.
@@ -362,7 +387,9 @@ func (s *Service) Me(ctx context.Context, accountID uuid.UUID) (store.GetMeRow, 
 	return s.db.GetMe(ctx, accountID)
 }
 
-func (s *Service) saveChallenge(ctx context.Context, purpose string, session *webauthn.SessionData, pending *pendingSignup) (uuid.UUID, error) {
+// saveChallenge stores a passkey ceremony. accountID binds an add-passkey challenge to
+// the account that started it; it's uuid.Nil for sign-up and sign-in.
+func (s *Service) saveChallenge(ctx context.Context, purpose string, session *webauthn.SessionData, pending *pendingSignup, accountID uuid.UUID) (uuid.UUID, error) {
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		return uuid.Nil, err
@@ -376,6 +403,7 @@ func (s *Service) saveChallenge(ctx context.Context, purpose string, session *we
 	id := mustUUIDv7()
 	err = s.db.CreateWebAuthnChallenge(ctx, store.CreateWebAuthnChallengeParams{
 		ID: id, Purpose: purpose, Session: sessionJSON, Signup: signupJSON,
+		AccountID: uuid.NullUUID{UUID: accountID, Valid: accountID != uuid.Nil},
 		ExpiresAt: time.Now().Add(challengeTTL),
 	})
 	return id, err
@@ -401,7 +429,8 @@ func createSession(ctx context.Context, q *store.Queries, accountID uuid.UUID, c
 	}
 	expires := time.Now().Add(ttl)
 	err = q.CreateSession(ctx, store.CreateSessionParams{
-		ID: mustUUIDv7(), TokenHash: hash, AccountID: accountID, Client: string(client), ExpiresAt: expires,
+		ID: mustUUIDv7(), TokenHash: hash, AccountID: accountID, Client: string(client),
+		UserAgent: userAgentFrom(ctx), ExpiresAt: expires,
 	})
 	return Session{Token: token, ExpiresAt: expires, AccountID: accountID}, err
 }
