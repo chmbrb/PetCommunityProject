@@ -2,6 +2,8 @@ module github.com/chmbrb/PetCommunityProject/tools
 
 go 1.26.0
 
+toolchain go1.26.10
+
 tool (
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 	golang.org/x/vuln/cmd/govulncheck

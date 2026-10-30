@@ -11,6 +11,10 @@ updates:
   - package-ecosystem: npm
     directory: /web
     schedule: { interval: weekly }
+    ignore:
+      # Node types must match the Node.js runtime major (24 LTS); move both together, deliberately.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       capacitor: { patterns: ["@capacitor/*"] }
       lint: { patterns: ["eslint*", "@eslint/*", "typescript-eslint", "globals"] }
@@ -18,10 +22,22 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      # Runtime majors are upgraded deliberately: Node.js LTS releases only, Go and
+      # Postgres alongside the toolchain and data migration they need.
+      - dependency-name: "library/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "library/golang"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "postgis/postgis"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker-compose
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "postgis/postgis"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

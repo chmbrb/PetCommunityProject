@@ -25,9 +25,11 @@ CMD ["serve"]
 
 FROM docker.io/library/node:24-slim AS web-build
 WORKDIR /src/web
-RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# Install the pnpm version pinned in package.json's packageManager field. Uses npm rather
+# than corepack, which Node.js no longer bundles from version 25.
+RUN npm install -g "$(node -p 'require("./package.json").packageManager')" \
+    && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
