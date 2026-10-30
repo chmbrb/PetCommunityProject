@@ -23,7 +23,7 @@ EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/petcommunity"]
 CMD ["serve"]
 
-FROM docker.io/library/node:24-slim AS web-build
+FROM docker.io/library/node:26-slim AS web-build
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml ./
 # Install the pnpm version pinned in package.json's packageManager field. Uses npm rather

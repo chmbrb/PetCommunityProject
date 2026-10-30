@@ -5,7 +5,7 @@ How to run PetCommunityProject locally. For why things are built this way, see t
 ## Prerequisites
 
 - Go 1.26+
-- Node.js 24 LTS with pnpm, at the version pinned in `web/package.json` (`packageManager`). Install it with `npm install -g pnpm@<version>`.
+- Node.js 26 LTS with pnpm, at the version pinned in `web/package.json` (`packageManager`). Install it with `npm install -g pnpm@<version>`.
 - Docker with Compose, or Podman with a Docker-compatible socket (see [Podman](#podman))
 - For the mobile apps: Android Studio (Android), or Xcode on macOS (iOS)
 
