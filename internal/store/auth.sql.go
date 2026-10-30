@@ -235,9 +235,11 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 
 const getMe = `-- name: GetMe :one
 SELECT a.id AS account_id, a.email, a.email_verified_at, a.status,
-       ac.id AS actor_id, ac.handle, ac.display_name
+       ac.id AS actor_id, ac.handle, ac.display_name,
+       m.variants AS avatar_variants
 FROM accounts a
 JOIN actors ac ON ac.account_id = a.id
+LEFT JOIN media_assets m ON m.id = ac.avatar_media_id AND m.status = 'ready'
 WHERE a.id = $1
 `
 
@@ -249,6 +251,7 @@ type GetMeRow struct {
 	ActorID         uuid.UUID
 	Handle          string
 	DisplayName     string
+	AvatarVariants  []byte
 }
 
 func (q *Queries) GetMe(ctx context.Context, id uuid.UUID) (GetMeRow, error) {
@@ -262,6 +265,7 @@ func (q *Queries) GetMe(ctx context.Context, id uuid.UUID) (GetMeRow, error) {
 		&i.ActorID,
 		&i.Handle,
 		&i.DisplayName,
+		&i.AvatarVariants,
 	)
 	return i, err
 }

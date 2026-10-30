@@ -24,6 +24,8 @@ import (
 	"github.com/chmbrb/PetCommunityProject/internal/database"
 	"github.com/chmbrb/PetCommunityProject/internal/jobs"
 	"github.com/chmbrb/PetCommunityProject/internal/mail"
+	"github.com/chmbrb/PetCommunityProject/internal/media"
+	"github.com/chmbrb/PetCommunityProject/internal/storage"
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
@@ -39,6 +41,8 @@ type authTestEnv struct {
 	rp      virtualwebauthn.RelyingParty
 	emailer *auth.Emailer
 	mail    *mail.Recorder
+	media   *media.Service
+	objects *storage.Storage
 }
 
 // envOption adjusts the test configuration.
@@ -81,7 +85,9 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
-	srv := httptest.NewServer(New(cfg, st, authSvc, logger))
+	objects := storage.NewMemory("https://media.test")
+	mediaSvc := media.NewService(st, objects, queue, media.NoScanner{}, logger)
+	srv := httptest.NewServer(New(cfg, st, authSvc, mediaSvc, logger))
 	t.Cleanup(srv.Close)
 
 	recorder := &mail.Recorder{}
@@ -90,6 +96,8 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 		rp:      virtualwebauthn.RelyingParty{Name: "Test Instance", ID: "localhost", Origin: testOrigin},
 		emailer: auth.NewEmailer(cfg, st, recorder, logger),
 		mail:    recorder,
+		media:   mediaSvc,
+		objects: objects,
 	}
 }
 

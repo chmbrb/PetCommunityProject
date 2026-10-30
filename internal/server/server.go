@@ -28,13 +28,14 @@ type Server struct {
 	cfg    config.Config
 	store  Store
 	auth   AuthService
+	media  MediaService
 	limits limiters
 	logger *slog.Logger
 }
 
 // New returns the application's HTTP handler.
-func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) http.Handler {
-	s := &Server{cfg: cfg, store: st, auth: authSvc, limits: newLimiters(cfg.RateLimits), logger: logger}
+func New(cfg config.Config, st Store, authSvc AuthService, mediaSvc MediaService, logger *slog.Logger) http.Handler {
+	s := &Server{cfg: cfg, store: st, auth: authSvc, media: mediaSvc, limits: newLimiters(cfg.RateLimits), logger: logger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -59,6 +60,10 @@ func New(cfg config.Config, st Store, authSvc AuthService, logger *slog.Logger) 
 	mux.HandleFunc("GET /api/v1/me/sessions", s.handleListSessions)
 	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.handleRevokeSession)
 	mux.HandleFunc("POST /api/v1/me/sessions/revoke-others", s.handleRevokeOtherSessions)
+	mux.HandleFunc("PUT /api/v1/me/avatar", s.handleSetAvatar)
+	mux.HandleFunc("DELETE /api/v1/me/avatar", s.handleRemoveAvatar)
+	mux.HandleFunc("POST "+uploadPath, s.handleUpload)
+	mux.HandleFunc("GET /api/v1/media/{id}", s.handleGetMedia)
 
 	return chain(mux,
 		s.requestID,

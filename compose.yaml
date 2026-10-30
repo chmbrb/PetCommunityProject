@@ -51,6 +51,14 @@ services:
       PC_SMTP_USERNAME: ${PC_SMTP_USERNAME:-}
       PC_SMTP_PASSWORD: ${PC_SMTP_PASSWORD:-}
       PC_MAIL_FROM: ${PC_MAIL_FROM:?set PC_MAIL_FROM in .env}
+      # Media storage (ADR 0010): see .env.example.
+      PC_S3_ENDPOINT: ${PC_S3_ENDPOINT:?set PC_S3_ENDPOINT in .env}
+      PC_S3_REGION: ${PC_S3_REGION:-us-east-1}
+      PC_S3_ACCESS_KEY: ${PC_S3_ACCESS_KEY:?set PC_S3_ACCESS_KEY in .env}
+      PC_S3_SECRET_KEY: ${PC_S3_SECRET_KEY:?set PC_S3_SECRET_KEY in .env}
+      PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
+      PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
+      PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s
@@ -72,6 +80,8 @@ services:
       # Encrypts actors' private keys (ADR 0012). Only the worker gets it.
       PC_SECRET_KEY: ${PC_SECRET_KEY:?set PC_SECRET_KEY in .env}
     read_only: true
+    # Decoding large photos is memory-hungry; contain it (ADR 0011).
+    mem_limit: 1g
     depends_on:
       migrate:
         condition: service_completed_successfully

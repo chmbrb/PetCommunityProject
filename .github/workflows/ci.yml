@@ -18,6 +18,9 @@ jobs:
   go:
     name: Go
     runs-on: ubuntu-latest
+    env:
+      # Image codecs must use their memory-safe Go builds only (ADR 0021).
+      GOFLAGS: -tags=nodynamic
     services:
       postgres:
         image: postgis/postgis:18-3.6

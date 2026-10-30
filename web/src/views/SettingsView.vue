@@ -16,6 +16,7 @@ import {
   type Passkey,
   type SessionInfo,
 } from '../api/client'
+import ProfilePhotoSection from '../components/ProfilePhotoSection.vue'
 import { deviceLabel } from '../deviceLabel'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
@@ -229,6 +230,8 @@ function formatDateTime(iso: string) {
       >
         {{ error }}
       </v-alert>
+
+      <ProfilePhotoSection />
 
       <section class="mb-10">
         <h2 class="text-h6 mb-1">

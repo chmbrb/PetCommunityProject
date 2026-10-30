@@ -43,7 +43,7 @@ func newTestServer(st Store) http.Handler {
 		InstanceDomain: "pets.example.org",
 		SourceURL:      config.DefaultSourceURL,
 	}
-	return New(cfg, st, noAuth{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(cfg, st, noAuth{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {

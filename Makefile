@@ -7,6 +7,9 @@ LOCAL_COMPOSE = $(COMPOSE) -p petcommunity-local --env-file deploy/local/local.e
 GO_TOOL = go tool -modfile=tools/go.mod
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
+# Image codecs must use their memory-safe Go builds, never a system C library (ADR 0021).
+export GOFLAGS := -tags=nodynamic
+
 export PC_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity?sslmode=disable
 TEST_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity_test?sslmode=disable
 

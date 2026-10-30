@@ -17,6 +17,7 @@ import (
 
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
+	"github.com/chmbrb/PetCommunityProject/internal/media"
 )
 
 // NewInserter returns a client that only inserts jobs, for the API server.
@@ -29,12 +30,14 @@ func NewInserter(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client[pgx.Tx]
 }
 
 // NewWorker returns a client that runs every job type, for the worker process.
-func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, mediaSvc *media.Service, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, auth.NewEmailWorker(emailer))
 	river.AddWorker(workers, &CleanupWorker{db: db, logger: logger})
 	river.AddWorker(workers, &ActorKeysWorker{keys: keys})
 	river.AddWorker(workers, &BackfillActorKeysWorker{keys: keys, logger: logger})
+	river.AddWorker(workers, &MediaWorker{media: mediaSvc})
+	river.AddWorker(workers, &MediaCleanupWorker{media: mediaSvc, logger: logger})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger:  logger,
@@ -42,6 +45,8 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 2},
 			auth.QueueEmail:    {MaxWorkers: 4},
+			// Image processing is memory-hungry; keep it to a couple at a time.
+			media.QueueMedia: {MaxWorkers: 2},
 		},
 		PeriodicJobs: []*river.PeriodicJob{
 			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
@@ -49,6 +54,9 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 				&river.PeriodicJobOpts{RunOnStart: true}),
 			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
 				func() (river.JobArgs, *river.InsertOpts) { return BackfillActorKeysJob{}, nil },
+				&river.PeriodicJobOpts{RunOnStart: true}),
+			river.NewPeriodicJob(river.PeriodicInterval(15*time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) { return MediaCleanupJob{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),
 		},
 	})

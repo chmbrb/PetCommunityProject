@@ -16,7 +16,7 @@ import (
 
 // limiters holds one limiter per rate-limit policy.
 type limiters struct {
-	api, signIn, signUp *ratelimit.Limiter
+	api, signIn, signUp, upload *ratelimit.Limiter
 }
 
 func newLimiters(rl config.RateLimits) limiters {
@@ -24,6 +24,7 @@ func newLimiters(rl config.RateLimits) limiters {
 		api:    ratelimit.New(rl.API),
 		signIn: ratelimit.New(rl.SignIn),
 		signUp: ratelimit.New(rl.SignUp),
+		upload: ratelimit.New(rl.Upload),
 	}
 }
 
@@ -50,6 +51,8 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 			checks = append(checks, limitCheck{"signup", s.limits.signUp})
 		case strings.HasPrefix(path, "/api/v1/auth/login/"):
 			checks = append(checks, limitCheck{"signin", s.limits.signIn})
+		case path == uploadPath && r.Method == http.MethodPost:
+			checks = append(checks, limitCheck{"upload", s.limits.upload})
 		}
 
 		for _, c := range checks {

@@ -12,7 +12,8 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+# nodynamic: image codecs use their memory-safe Go builds only (ADR 0021).
+RUN CGO_ENABLED=0 go build -trimpath -tags nodynamic \
     -ldflags "-s -w -X github.com/chmbrb/PetCommunityProject/internal/version.Version=${VERSION}" \
     -o /out/petcommunity ./cmd/petcommunity
 

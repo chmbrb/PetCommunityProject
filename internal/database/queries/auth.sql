@@ -78,7 +78,9 @@ UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL;
 
 -- name: GetMe :one
 SELECT a.id AS account_id, a.email, a.email_verified_at, a.status,
-       ac.id AS actor_id, ac.handle, ac.display_name
+       ac.id AS actor_id, ac.handle, ac.display_name,
+       m.variants AS avatar_variants
 FROM accounts a
 JOIN actors ac ON ac.account_id = a.id
+LEFT JOIN media_assets m ON m.id = ac.avatar_media_id AND m.status = 'ready'
 WHERE a.id = $1;

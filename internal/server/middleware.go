@@ -98,10 +98,13 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// limitBody caps request bodies. Uploads have their own, larger limit (handleUpload).
 func limitBody(n int64) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, n)
+			if r.Method != http.MethodPost || r.URL.Path != uploadPath {
+				r.Body = http.MaxBytesReader(w, r.Body, n)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

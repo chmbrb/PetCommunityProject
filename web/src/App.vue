@@ -1,13 +1,16 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script setup lang="ts">
 import { mdiAccountCircle, mdiPaw } from '@mdi/js'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { pickVariant } from './api/client'
 import { useInstance } from './useInstance'
 import { useSession } from './useSession'
 
 const router = useRouter()
 const { instance } = useInstance()
 const { me, loaded, signOut } = useSession()
+const avatarUrl = computed(() => (me.value ? pickVariant(me.value.actor.avatar, 64)?.url : undefined))
 
 async function onSignOut() {
   await signOut()
@@ -44,9 +47,23 @@ async function onSignOut() {
           <template #activator="{ props }">
             <v-btn
               v-bind="props"
-              :prepend-icon="mdiAccountCircle"
               variant="text"
             >
+              <v-avatar
+                size="28"
+                class="me-2"
+              >
+                <v-img
+                  v-if="avatarUrl"
+                  :src="avatarUrl"
+                  alt=""
+                  cover
+                />
+                <v-icon
+                  v-else
+                  :icon="mdiAccountCircle"
+                />
+              </v-avatar>
               {{ me.actor.display_name }}
             </v-btn>
           </template>

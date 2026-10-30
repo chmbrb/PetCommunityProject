@@ -13,6 +13,9 @@ services:
     # Unprivileged port, so rootless Podman can bind it.
     ports: !override
       - "127.0.0.1:8443:443"
+    # Serves the MinIO media bucket at /media/.
+    volumes:
+      - ./deploy/local/media.caddy:/etc/caddy/extra/media.caddy:ro,z
 
   app:
     environment:
@@ -43,3 +46,39 @@ services:
       - "127.0.0.1:8026:8025" # web inbox
     networks: [edge]
     restart: unless-stopped
+
+  # Object storage standing in for a hosted provider. MinIO is fine for this
+  # throwaway stack (ADR 0010); production uses a hosted or maintained server.
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:e234321fd3abff7fb968b0674056e883b702aa1ad93a0d4d795cb6c21fa46407
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${PC_S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${PC_S3_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    networks: [edge]
+    restart: unless-stopped
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    depends_on: [minio]
+    environment:
+      MC_HOST_local: http://${PC_S3_ACCESS_KEY}:${PC_S3_SECRET_KEY}@minio:9000
+    command: ["mb", "--ignore-existing", "local/media", "local/quarantine"]
+    networks: [edge]
+    restart: on-failure
+
+  minio-policy:
+    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MC_HOST_local: http://${PC_S3_ACCESS_KEY}:${PC_S3_SECRET_KEY}@minio:9000
+    command: ["anonymous", "set", "download", "local/media"]
+    networks: [edge]
+    restart: on-failure
+
+volumes:
+  minio-data:
