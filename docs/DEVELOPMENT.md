@@ -94,7 +94,7 @@ CI builds a debug Android APK. iOS builds need a macOS runner and will be added 
 
 ## Production deployment (preview)
 
-`compose.yaml` runs Caddy, the app, a one-shot migration, and Postgres on an internal network:
+`compose.yaml` runs Caddy, the app, the worker, a one-shot migration, and Postgres on an internal network:
 
 ```sh
 cp .env.example .env    # fill in the values
@@ -102,6 +102,22 @@ docker compose up -d --build
 ```
 
 It's a **preview**: backups (ADR 0016) and media storage (ADR 0010) aren't wired in yet, so don't run a real instance on it until they are.
+
+### Trying the production stack locally
+
+`make local-up` runs the real production setup on your machine: the same images, `compose.yaml`, production mode and its safety checks, behind Caddy. The only difference is that email goes to Mailpit instead of a provider. `compose.local.yaml` holds the changes, and `deploy/local/local.env` the settings (none secret).
+
+```sh
+make local-up      # builds images, creates local certificates, starts everything
+```
+
+- App: https://localhost:8443. Caddy uses its own local certificate, so the browser warns once.
+- Mail: http://localhost:8025.
+- `make local-logs` follows the logs; `make local-down` stops; `make local-reset` also deletes the data.
+
+Production mode refuses unencrypted SMTP, so Mailpit speaks STARTTLS with a certificate from a throwaway local certificate authority (`deploy/local/make-certs.sh`, run by `make local-certs`; gitignored, valid 90 days). The worker trusts that authority through `PC_SMTP_CA_FILE`. Certificate verification stays on: without the file, the worker refuses Mailpit's certificate. Real providers don't need `PC_SMTP_CA_FILE`.
+
+The stack uses its own Compose project (`petcommunity-local`), so its data never mixes with a real deployment on the same machine.
 
 ### Email
 
@@ -136,4 +152,6 @@ export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
 make dev-up
 ```
 
-Rootless Podman can't bind ports 80 and 443, which the production `compose.yaml` uses. Use an override file with other ports for local testing.
+Rootless Podman can't bind ports 80 and 443, which the production `compose.yaml` uses; `make local-up` maps Caddy to 8443 instead.
+
+Build images either with Compose (`make local-up`, `docker compose build`) or with `podman build`, not a mix. Compose through the socket tags images as `docker.io/library/petcommunity-app:local`, while `podman build -t petcommunity-app:local` tags `localhost/petcommunity-app:local`. Containers may then start from whichever was built last under the short name. If a container runs old code, remove the stale image (`podman rmi localhost/petcommunity-app:local`).

@@ -5,7 +5,10 @@ package mail
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -30,11 +33,28 @@ type Sender interface {
 // SMTPSender sends through an SMTP server, normally an email provider's.
 type SMTPSender struct {
 	cfg config.Mail
+	tls *tls.Config
 }
 
-// NewSMTPSender returns a sender for the configured server.
-func NewSMTPSender(cfg config.Mail) *SMTPSender {
-	return &SMTPSender{cfg: cfg}
+// NewSMTPSender returns a sender for the configured server. It fails if the extra
+// certificate authorities in cfg.CAFile can't be loaded.
+func NewSMTPSender(cfg config.Mail) (*SMTPSender, error) {
+	tlsCfg := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
+	if cfg.CAFile != "" {
+		pem, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read PC_SMTP_CA_FILE: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("PC_SMTP_CA_FILE %s contains no PEM certificates", cfg.CAFile)
+		}
+		tlsCfg.RootCAs = pool
+	}
+	return &SMTPSender{cfg: cfg, tls: tlsCfg}, nil
 }
 
 // Send connects, sends one message, and disconnects. Volume is low enough that
@@ -58,6 +78,7 @@ func (s *SMTPSender) Send(ctx context.Context, msg Message) error {
 	opts := []gomail.Option{
 		gomail.WithPort(s.cfg.Port),
 		gomail.WithTimeout(30 * time.Second),
+		gomail.WithTLSConfig(s.tls),
 	}
 	switch s.cfg.Security {
 	case config.MailTLS:

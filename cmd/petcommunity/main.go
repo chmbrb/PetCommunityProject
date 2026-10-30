@@ -160,7 +160,11 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	defer pool.Close()
 
 	st := database.NewStore(pool)
-	emailer := auth.NewEmailer(cfg, st, mail.NewSMTPSender(cfg.Mail), logger)
+	sender, err := mail.NewSMTPSender(cfg.Mail)
+	if err != nil {
+		return err
+	}
+	emailer := auth.NewEmailer(cfg, st, sender, logger)
 	client, err := jobs.NewWorker(pool, st, emailer, logger)
 	if err != nil {
 		return err
