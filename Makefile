@@ -13,7 +13,7 @@ export GOFLAGS := -tags=nodynamic
 export PC_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity?sslmode=disable
 TEST_DATABASE_URL ?= postgres://petcommunity:dev-only-password@localhost:5432/petcommunity_test?sslmode=disable
 
-.PHONY: help dev-up dev-down dev-reset migrate run worker web local-certs local-up local-down local-reset local-logs local-backup-list local-backup-drill generate test test-go test-integration test-web lint vuln images
+.PHONY: help dev-up dev-down dev-reset migrate run worker web local-certs local-up local-down local-reset local-logs local-backup-list local-backup-drill secrets generate test test-go test-integration test-web lint vuln images
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -62,6 +62,9 @@ lint: ## Check formatting, vet, generated code, and web lint
 vuln: ## Scan Go dependencies for known vulnerabilities
 	$(GO_TOOL) govulncheck ./...
 
+secrets: ## Create the production stack's secret files (never overwrites; see secrets/README.md)
+	deploy/make-secrets.sh
+
 local-certs: ## Create the throwaway certificates for the local production stack
 	deploy/local/make-certs.sh
 
@@ -83,6 +86,8 @@ local-backup-list: ## List the local production stack's base backups
 local-backup-drill: ## Restore the latest local backup into a scratch copy and check it
 	$(LOCAL_COMPOSE) exec backup pc-backup verify
 
-images: ## Build the app and web container images
+images: ## Build the container images
 	docker build --target app --build-arg VERSION=$(VERSION) -t petcommunity-app:local .
 	docker build --target web -t petcommunity-web:local .
+	docker build --target db -t petcommunity-db:local .
+	docker build --target backup -t petcommunity-backup:local .

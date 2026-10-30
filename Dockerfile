@@ -4,6 +4,7 @@
 # Images (ADR 0009):
 #   --target app     the Go binary (serve, worker, migrate, healthcheck)
 #   --target web     Caddy with the built SPA and the production Caddyfile
+#   --target db      PostGIS with current Debian security fixes
 #   --target backup  the network-less database backup container (ADR 0016)
 
 FROM docker.io/library/golang:1.26 AS go-build
@@ -36,6 +37,8 @@ COPY web/ ./
 RUN pnpm build
 
 FROM docker.io/library/caddy:2.11-alpine AS web
+# Picks up Alpine security fixes released since the upstream image was built.
+RUN apk upgrade --no-cache
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=web-build /src/web/dist /srv
 
@@ -54,9 +57,16 @@ RUN case "$TARGETARCH" in \
     && tar -xzf /walg.tgz -C / \
     && mv "/wal-g-pg-24.04-${arch}" /wal-g
 
-# --target backup: the network-less backup container. It's the PostGIS image (the
-# same Postgres version as the database, for restores and drills) plus WAL-G.
-FROM docker.io/postgis/postgis:18-3.6 AS backup
+# --target db: the database. PostGIS plus Debian security fixes released since the
+# upstream image was built. The backup image builds on it, so the database and backups
+# always run the exact same Postgres build (which physical backups require).
+FROM docker.io/postgis/postgis:18-3.6 AS db
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# --target backup: the network-less backup container: the database image plus WAL-G.
+FROM db AS backup
 COPY --from=walg /wal-g /usr/local/bin/wal-g
 COPY deploy/backup/pc-backup /usr/local/bin/pc-backup
 # Scratch space for restore drills; a new volume mounted here inherits this owner.

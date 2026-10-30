@@ -5,6 +5,8 @@ package config
 import (
 	"bytes"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -320,5 +322,82 @@ func TestLoadValidation(t *testing.T) {
 				t.Fatalf("Load error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func writeSecret(t *testing.T, value string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte(value), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSecretsFromFiles(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	cfg, err := Load(env(map[string]string{
+		"PC_DATABASE_URL":           "postgres://petcommunity@db:5432/petcommunity",
+		"PC_DATABASE_PASSWORD_FILE": writeSecret(t, "p@ss/word+\n"),
+		"PC_SECRET_KEY_FILE":        writeSecret(t, key+"\n"),
+		"PC_SMTP_PASSWORD_FILE":     writeSecret(t, "smtp-pass\r\n"),
+		"PC_S3_ACCESS_KEY_FILE":     writeSecret(t, "access"),
+		"PC_S3_SECRET_KEY_FILE":     writeSecret(t, "storage-secret\n"),
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := "postgres://petcommunity:p%40ss%2Fword+@db:5432/petcommunity"; cfg.DatabaseURL != want {
+		t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, want)
+	}
+	if !bytes.Equal(cfg.SecretKey, bytes.Repeat([]byte{7}, 32)) {
+		t.Error("SecretKey wasn't read from its file")
+	}
+	if cfg.Mail.Password != "smtp-pass" || cfg.Storage.AccessKey != "access" || cfg.Storage.SecretKey != "storage-secret" {
+		t.Errorf("secrets = %q %q %q, want them read from files without trailing newlines",
+			cfg.Mail.Password, cfg.Storage.AccessKey, cfg.Storage.SecretKey)
+	}
+}
+
+func TestSecretFileErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"both forms", map[string]string{
+			"PC_SMTP_PASSWORD": "a", "PC_SMTP_PASSWORD_FILE": writeSecret(t, "b"),
+		}, "set PC_SMTP_PASSWORD or PC_SMTP_PASSWORD_FILE, not both"},
+		{"missing file", map[string]string{
+			"PC_S3_SECRET_KEY_FILE": filepath.Join(t.TempDir(), "missing"),
+		}, "PC_S3_SECRET_KEY_FILE:"},
+		{"password already in URL", map[string]string{
+			"PC_DATABASE_URL": "postgres://u:old@db/app", "PC_DATABASE_PASSWORD_FILE": writeSecret(t, "new"),
+		}, "already contains a password"},
+		{"URL without user", map[string]string{
+			"PC_DATABASE_URL": "postgres://db/app", "PC_DATABASE_PASSWORD": "pw",
+		}, "needs PC_DATABASE_URL to name the user"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := tt.env["PC_DATABASE_URL"]; !ok {
+				tt.env["PC_DATABASE_URL"] = "postgres://x"
+			}
+			_, err := Load(env(tt.env))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestProductionRejectsDevPasswordFromFile(t *testing.T) {
+	_, err := Load(env(map[string]string{
+		"PC_ENV":                    "production",
+		"PC_DATABASE_URL":           "postgres://petcommunity@db/petcommunity",
+		"PC_DATABASE_PASSWORD_FILE": writeSecret(t, DevDatabasePassword),
+	}))
+	if err == nil || !strings.Contains(err.Error(), "development password") {
+		t.Errorf("err = %v, want the development password rejected", err)
 	}
 }

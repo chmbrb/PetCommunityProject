@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Secret scanning (gitleaks) configuration, used by CI. Uses the default rules, with
+# narrow exceptions for values that are public by design.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixed, public values for the throwaway local production stack (deploy/local)"
+paths = ['''^deploy/local/''']
+
+[[allowlists]]
+description = "Fake location marker used by media tests to prove EXIF data is stripped"
+regexes = ['''PC-SECRET-GPS-[0-9.NSEW-]+''']
