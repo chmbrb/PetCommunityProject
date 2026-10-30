@@ -96,7 +96,7 @@ To decide: the actual periods, whether they're fixed for all instances or set pe
 - **Exit:** an agreed MVP scope and domain model, with open assumptions listed for the Phase 2 pilot
 
 ### Phase 1: Foundation
-- **Progress:** scaffolding in place (Compose stacks, Go API, Vue/Vuetify app with Capacitor projects, CI). Passkey sign-up and sign-in on the web, with sessions for web and mobile clients. Next: email verification and magic links, actor keys, rate limiting, media pipeline, backups. See [DEVELOPMENT.md](DEVELOPMENT.md).
+- **Progress:** scaffolding in place (Compose stacks, Go API, Vue/Vuetify app with Capacitor projects, CI). Passkey sign-up and sign-in on the web, with sessions for web and mobile clients. Per-client rate limits on the API, sign-in, and sign-up. Next: email verification and magic links, actor keys, media pipeline, backups. See [DEVELOPMENT.md](DEVELOPMENT.md).
 - Compose stack (Caddy, Go API, Postgres, object storage), CI
 - Auth, accounts, and profiles modeled as AP actors
 - Sign-in with passkeys, email magic links, and passwords; accounts support multiple sign-in methods

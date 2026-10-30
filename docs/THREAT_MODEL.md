@@ -5,7 +5,7 @@ Status: **Draft (Phase 0)**. Covers a single instance through Phase 3, and notes
 ## Scope and architecture
 
 ```
-Internet ──▶ Caddy (TLS, rate limits) ──▶ Go API ──▶ Postgres
+Internet ──▶ Caddy (TLS) ──▶ Go API (rate limits) ──▶ Postgres
                      │                      │  └──▶ river jobs (media, email, later federation)
                      └──▶ Vuetify SPA       └──▶ Object storage (media)
                                                      │
@@ -104,7 +104,7 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 | I2 | Secrets leaked in a repo, image, or logs | M | H | Secrets from env or files, never committed; secret scanning in CI; PII redacted in logs | 1 |
 | I3 | Backup theft | L | H | Backups encrypted before upload; separate credentials with write-only/append-only permission where possible; restricted access | 1 |
 | I4 | Theft of shelters' import API keys | L | H | Encrypted at rest, used only by the import worker, never shown again after entry; shelters can revoke them; read-only keys where the vendor offers them | 2 |
-| D1 | DoS or resource exhaustion | M | M | Caddy and API rate limits; request size limits; image decompression-bomb limits (max pixels); job queue concurrency caps | 1 |
+| D1 | DoS or resource exhaustion | M | M | API rate limits per client IP, applied before authentication so floods don't reach the database (IPv6 grouped by /64); request size limits; image decompression-bomb limits (max pixels); job queue concurrency caps | 1 |
 | E1 | Privilege escalation through role management | L | H | Only owners/admins grant roles; role changes are audited; elevated roles require MFA | 1 |
 
 ### Content and malware

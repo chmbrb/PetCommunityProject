@@ -7,7 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/chmbrb/PetCommunityProject/internal/ratelimit"
 )
 
 // Environment selects development or production behavior.
@@ -40,6 +44,34 @@ type Config struct {
 	WebAuthnRPID string
 	// WebAuthnOrigins are the exact origins (scheme://host[:port]) allowed to use passkeys.
 	WebAuthnOrigins []string
+
+	// TrustProxy makes the app take the client IP from X-Forwarded-For, as set by
+	// Caddy. Enable it only when the app is reachable solely through the proxy;
+	// otherwise clients could choose their own IP and evade rate limits.
+	TrustProxy bool
+	// RateLimits apply per client IP (THREAT_MODEL.md A8, D1, S1).
+	RateLimits RateLimits
+}
+
+// RateLimits groups the request rate limits. A policy with zero Burst is disabled.
+type RateLimits struct {
+	// API covers every /api request.
+	API ratelimit.Policy
+	// SignIn covers passkey sign-in attempts.
+	SignIn ratelimit.Policy
+	// SignUp covers account creation, which also reveals whether an email is
+	// registered, so it's the strictest.
+	SignUp ratelimit.Policy
+}
+
+// DefaultRateLimits are generous for people, including several staff at a shelter
+// sharing one IP address, and tight for automated abuse.
+func DefaultRateLimits() RateLimits {
+	return RateLimits{
+		API:    ratelimit.Policy{Burst: 100, Every: 100 * time.Millisecond}, // 10/s sustained
+		SignIn: ratelimit.Policy{Burst: 10, Every: 6 * time.Second},         // 10/min sustained
+		SignUp: ratelimit.Policy{Burst: 5, Every: 2 * time.Minute},          // 30/h sustained
+	}
 }
 
 // Load reads configuration using getenv (normally os.Getenv) and validates it.
@@ -59,7 +91,15 @@ func Load(getenv func(string) string) (Config, error) {
 	if v := getenv("PC_WEBAUTHN_ORIGINS"); v != "" {
 		cfg.WebAuthnOrigins = splitList(v)
 	}
-	return cfg, cfg.validate()
+	cfg.RateLimits = DefaultRateLimits()
+
+	var trustErr error
+	if v := getenv("PC_TRUST_PROXY"); v != "" {
+		if cfg.TrustProxy, trustErr = strconv.ParseBool(v); trustErr != nil {
+			trustErr = fmt.Errorf("PC_TRUST_PROXY must be true or false, got %q", v)
+		}
+	}
+	return cfg, errors.Join(trustErr, cfg.validate())
 }
 
 func (c Config) validate() error {
@@ -93,6 +133,9 @@ func (c Config) validate() error {
 	}
 
 	if c.Env == Production {
+		if c.RateLimits.API.Disabled() || c.RateLimits.SignIn.Disabled() || c.RateLimits.SignUp.Disabled() {
+			errs = append(errs, errors.New("rate limits can't be disabled in production"))
+		}
 		if c.InstanceDomain == "" {
 			errs = append(errs, errors.New("PC_INSTANCE_DOMAIN is required in production"))
 		}
