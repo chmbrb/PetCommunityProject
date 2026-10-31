@@ -43,12 +43,15 @@ Go backend · PostgreSQL (with PostGIS) · Vue 3 + Vuetify web app, packaged for
 - [Domain model](docs/DOMAIN_MODEL.md): core entities and how they map to ActivityPub
 - [Threat model](docs/THREAT_MODEL.md): risks and mitigations by phase
 - [Architecture decision records](docs/adr/README.md)
+- [Repository setup](docs/REPOSITORY_SETUP.md): how the GitHub repository and maintainer accounts are secured
 
 ## Get involved
 
 The project is currently led by one person, with the aim of bringing in others and growing through federation. If you work at a shelter or rescue, run community infrastructure, or want to contribute, please open an issue to start a conversation.
 
-A contributor agreement is still to be decided (it's needed to publish the mobile apps in the app stores). Until then, please talk to us before submitting code.
+A contributor agreement is still to be decided (it's needed to publish the mobile apps in the app stores). Until then, please talk to us before submitting code. See [CONTRIBUTING.md](CONTRIBUTING.md) for how changes are made and reviewed.
+
+Found a security problem? Please report it privately, as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## License
 
