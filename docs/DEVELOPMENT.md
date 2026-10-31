@@ -78,7 +78,9 @@ CI looks at which files changed and runs only the jobs they affect (`.github/scr
 | Dependency review | a pull request changes a lockfile | blocks newly added dependencies with known vulnerabilities |
 | Workflow lint | `.github/` changed | actionlint and zizmor (workflow security) |
 
-**CI result** sums these up, counting skipped jobs as passed: make it the one required status check in branch protection. CodeQL (`.github/workflows/codeql.yml`) separately analyses Go, TypeScript, and the workflows for security bugs, reporting to the repository's Security tab; it skips documentation-only changes.
+**CI result** sums these up, counting skipped jobs as passed. CodeQL (`.github/workflows/codeql.yml`) separately analyses Go, TypeScript, and the workflows for security bugs on every change, reporting to the repository's Security tab.
+
+The `main` branch ruleset requires `CI result` and the three `Analyze (…)` CodeQL checks, and pull requests are squash-merged. Don't add the individual CI jobs as required checks: they're skipped when their area didn't change, and a required check that never runs blocks the merge.
 
 ## Upgrading runtimes
 
