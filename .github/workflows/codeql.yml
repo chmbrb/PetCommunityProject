@@ -5,12 +5,12 @@
 # under the repository's Security tab.
 name: CodeQL
 
+# Runs on every change, including documentation-only ones: its checks are required by
+# the main branch ruleset, and a required check that never runs would block the merge.
 on:
   push:
     branches: [main]
-    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   pull_request:
-    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   schedule:
     - cron: "41 6 * * 1"
   workflow_dispatch:
