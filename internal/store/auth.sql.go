@@ -235,6 +235,7 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 
 const getMe = `-- name: GetMe :one
 SELECT a.id AS account_id, a.email, a.email_verified_at, a.status,
+       (a.password_hash IS NOT NULL)::boolean AS has_password, a.password_changed_at,
        ac.id AS actor_id, ac.handle, ac.display_name,
        m.variants AS avatar_variants
 FROM accounts a
@@ -244,14 +245,16 @@ WHERE a.id = $1
 `
 
 type GetMeRow struct {
-	AccountID       uuid.UUID
-	Email           string
-	EmailVerifiedAt *time.Time
-	Status          string
-	ActorID         uuid.UUID
-	Handle          string
-	DisplayName     string
-	AvatarVariants  []byte
+	AccountID         uuid.UUID
+	Email             string
+	EmailVerifiedAt   *time.Time
+	Status            string
+	HasPassword       bool
+	PasswordChangedAt *time.Time
+	ActorID           uuid.UUID
+	Handle            string
+	DisplayName       string
+	AvatarVariants    []byte
 }
 
 func (q *Queries) GetMe(ctx context.Context, id uuid.UUID) (GetMeRow, error) {
@@ -262,6 +265,8 @@ func (q *Queries) GetMe(ctx context.Context, id uuid.UUID) (GetMeRow, error) {
 		&i.Email,
 		&i.EmailVerifiedAt,
 		&i.Status,
+		&i.HasPassword,
+		&i.PasswordChangedAt,
 		&i.ActorID,
 		&i.Handle,
 		&i.DisplayName,

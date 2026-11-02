@@ -46,7 +46,14 @@ export interface ImageVariant {
 }
 
 export interface Me {
-  account: { id: string; email: string; email_verified: boolean; status: string }
+  account: {
+    id: string
+    email: string
+    email_verified: boolean
+    status: string
+    has_password: boolean
+    password_changed_at: string | null
+  }
   actor: { id: string; handle: string; display_name: string; avatar: ImageVariant[] }
 }
 
@@ -190,8 +197,26 @@ export function requestEmailSignup(details: SignupDetails) {
   return request<{ status: string }>('POST', '/api/v1/auth/signup/email/request', details)
 }
 
-export function finishEmailSignup(proof: EmailProof) {
-  return request<Me>('POST', '/api/v1/auth/signup/email/finish', proof)
+/** Creates the account; a password is optional. */
+export function finishEmailSignup(proof: EmailProof, password?: string) {
+  return request<Me>('POST', '/api/v1/auth/signup/email/finish', password ? { ...proof, password } : proof)
+}
+
+/**
+ * Signs in with a password. On a device the account hasn't used before, this fails
+ * with code "email_code_required" and emails a code; repeat the call with it.
+ */
+export function passwordSignIn(email: string, password: string, code?: string) {
+  return request<Me>('POST', '/api/v1/auth/login/password', code ? { email, password, code } : { email, password })
+}
+
+/** Adds or changes the password. Signs out every other device. */
+export function setPassword(password: string) {
+  return request<void>('PUT', '/api/v1/me/password', { password })
+}
+
+export function removePassword() {
+  return request<void>('DELETE', '/api/v1/me/password')
 }
 
 export function verifyEmail(token: string) {

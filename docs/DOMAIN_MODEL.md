@@ -32,7 +32,7 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 ### Identity and actors
 
-**Account**: a login. `id`, `email` (unique; verified later by email; may be an Apple relay address), `webauthn_user_handle` (64 random bytes identifying the account to passkeys; never derived from the ID or email), `password_hash` (argon2id, nullable), `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
+**Account**: a login. `id`, `email` (unique; verified later by email; may be an Apple relay address), `webauthn_user_handle` (64 random bytes identifying the account to passkeys; never derived from the ID or email), `password_hash` (argon2id, nullable), `password_changed_at`, `failed_password_attempts`, `password_locked_until`, `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
 
 **Session**: a signed-in device. `id`, `token_hash` (SHA-256 of the cookie or bearer token), `account_id`, `client` (web / mobile), `user_agent` (for the signed-in devices list; kept only as long as the session), `created_at` (when it signed in; used for step-up checks), `last_seen_at`, `expires_at`, `revoked_at`. Signing in again from the same client replaces its previous session.
 
@@ -43,6 +43,8 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 **TotpFactor**: an authenticator app or password manager entry used as a second factor (ADR 0014). `id`, `account_id`, `name`, `secret_encrypted` (AES-256-GCM under the API's MFA key), `key_id`, `last_used_step` (rejects replayed codes), `confirmed_at` (null until the first valid code), `created_at`, `last_used_at`. An account has MFA when it has a confirmed TotpFactor or a passkey.
 
 **RecoveryCode**: `id`, `account_id`, `code_hash`, `created_at`, `used_at`. Ten per set; generating a new set deletes the old one.
+
+**KnownDevice**: a browser or app install that has signed in to an account. `id`, `account_id`, `token_hash` (the token lives in a cookie or the app's storage), `created_at`, `last_used_at`, `expires_at` (a year after the last sign-in). A password sign-in from any other device needs an emailed code.
 
 **Actor**: the public identity. `id`, `type` (person / organization / group), `handle` (unique per instance), `display_name`, `summary`, `avatar_media_id`, `ap_id` (URI), `inbox_uri`, `outbox_uri`, `public_key_pem`, `private_key_enc` (encrypted; see ADR 0012), `private_key_kid`, `keys_created_at`, `is_local`, `instance_id` (for remote actors later), `approx_location_id`. For local actors, `ap_id`, `inbox_uri`, and `outbox_uri` are derived from the instance domain and the ID rather than stored; they're stored only for remote actors (Phase 5).
 

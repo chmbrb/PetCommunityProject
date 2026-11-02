@@ -57,6 +57,18 @@ func PasskeyRemoved(to string, data LinkEmail) (Message, error) {
 	return render(to, "A passkey was removed from your "+data.InstanceName+" account", "passkey_removed", data)
 }
 
+// NewDevice sends the code that confirms a password sign-in from a new device, and
+// warns the person in case it wasn't them.
+func NewDevice(to string, data LinkEmail) (Message, error) {
+	return render(to, "Confirm a sign-in to "+data.InstanceName+" from a new device", "new_device", data)
+}
+
+// PasswordChanged tells the person their password was added, changed, or removed
+// (data.Detail), in case it wasn't them.
+func PasswordChanged(to string, data LinkEmail) (Message, error) {
+	return render(to, "Your "+data.InstanceName+" password was "+data.Detail, "password_changed", data)
+}
+
 func render(to, subject, name string, data LinkEmail) (Message, error) {
 	var text, html bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, name+".txt", data); err != nil {

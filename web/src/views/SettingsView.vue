@@ -10,20 +10,23 @@ import {
   listPasskeys,
   listSessions,
   removePasskey,
+  removePassword,
   renamePasskey,
   requestSignInLink,
   revokeOtherSessions,
   revokeSession,
+  setPassword,
   type Passkey,
   type SessionInfo,
 } from '../api/client'
 import EmailCodeForm from '../components/EmailCodeForm.vue'
+import PasswordField from '../components/PasswordField.vue'
 import ProfilePhotoSection from '../components/ProfilePhotoSection.vue'
 import { deviceLabel } from '../deviceLabel'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
-const { me, loaded, signIn, signInWithEmail } = useSession()
+const { me, loaded, signIn, signInWithEmail, refresh } = useSession()
 
 const passkeys = ref<Passkey[]>([])
 const sessions = ref<SessionInfo[]>([])
@@ -192,6 +195,38 @@ function confirmRemove() {
   }, 'Passkey removed.')
 }
 
+// Password
+const passwordOpen = ref(false)
+const newPassword = ref('')
+const removePasswordOpen = ref(false)
+
+function openPassword() {
+  newPassword.value = ''
+  error.value = null
+  passwordOpen.value = true
+}
+
+function savePassword() {
+  const changing = me.value?.account.has_password ?? false
+  const password = newPassword.value
+  return run(async () => {
+    await setPassword(password)
+    passwordOpen.value = false
+    newPassword.value = ''
+    await Promise.all([refresh(), load()])
+  }, changing
+    ? 'Password changed. Your other devices were signed out, and we emailed you a notice.'
+    : 'Password added. Your other devices were signed out, and we emailed you a notice.')
+}
+
+function confirmRemovePassword() {
+  return run(async () => {
+    await removePassword()
+    removePasswordOpen.value = false
+    await refresh()
+  }, 'Password removed. We emailed you a notice.')
+}
+
 // Signed-in devices
 function signOutDevice(s: SessionInfo) {
   return run(async () => {
@@ -264,6 +299,42 @@ function formatDateTime(iso: string) {
       </v-alert>
 
       <ProfilePhotoSection />
+
+      <section class="mb-10">
+        <h2 class="text-h6 mb-1">
+          Password
+        </h2>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          Optional. With a password you can sign in without waiting for an email; on a new
+          device we'll still email you a code to confirm it's you.
+        </p>
+        <p class="text-body-2 mb-3">
+          <template v-if="me.account.has_password">
+            You have a password<template v-if="me.account.password_changed_at">
+              , set
+              {{ formatDate(me.account.password_changed_at) }}
+            </template>.
+          </template>
+          <template v-else>
+            You don't have a password.
+          </template>
+        </p>
+        <div class="d-flex flex-wrap ga-2">
+          <v-btn
+            color="primary"
+            @click="openPassword"
+          >
+            {{ me.account.has_password ? 'Change password' : 'Add a password' }}
+          </v-btn>
+          <v-btn
+            v-if="me.account.has_password"
+            variant="text"
+            @click="removePasswordOpen = true"
+          >
+            Remove password
+          </v-btn>
+        </div>
+      </section>
 
       <section class="mb-10">
         <h2 class="text-h6 mb-1">
@@ -351,7 +422,7 @@ function formatDateTime(iso: string) {
           Signed-in devices
         </h2>
         <p class="text-body-2 text-medium-emphasis mb-4">
-          If you don't recognize a device, sign it out and check your passkeys and email.
+          If you don't recognize a device, sign it out, change your password, and check your passkeys.
         </p>
 
         <v-list
@@ -431,6 +502,83 @@ function formatDateTime(iso: string) {
             @click="addPasskey"
           >
             Continue
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      v-model="passwordOpen"
+      max-width="440"
+    >
+      <v-card :title="me?.account.has_password ? 'Change password' : 'Add a password'">
+        <v-form @submit.prevent="savePassword">
+          <v-card-text>
+            <PasswordField
+              v-model="newPassword"
+              autocomplete="new-password"
+              label="New password"
+              hint="At least 12 characters. A few unrelated words make a strong one."
+            />
+            <p class="text-body-2 mt-4">
+              Your other devices will be signed out.
+            </p>
+            <v-alert
+              v-if="error"
+              type="error"
+              variant="tonal"
+              class="mt-4"
+            >
+              {{ error }}
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="passwordOpen = false">
+              Cancel
+            </v-btn>
+            <v-btn
+              type="submit"
+              color="primary"
+              :loading="busy"
+            >
+              Save
+            </v-btn>
+          </v-card-actions>
+        </v-form>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      v-model="removePasswordOpen"
+      max-width="440"
+    >
+      <v-card title="Remove password?">
+        <v-card-text>
+          You'll sign in with codes we email you<template v-if="passkeys.length > 0">
+            , or a
+            passkey
+          </template>. We'll email you a notice.
+          <v-alert
+            v-if="error"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+          >
+            {{ error }}
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="removePasswordOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="error"
+            :loading="busy"
+            @click="confirmRemovePassword"
+          >
+            Remove
           </v-btn>
         </v-card-actions>
       </v-card>

@@ -217,6 +217,12 @@ Email links point to `PC_PUBLIC_URL` (by default `https://` + the instance domai
 
 Sign-in and sign-up emails carry both a link and a 6-digit code for the same sign-in, for when the link opens in the wrong browser or outside the app. Signing up by email creates nothing until the link or code is used: the details wait with the email's token, and the account is created, with its address already verified, when the person confirms. Passkeys are optional; an account can remove its last passkey once its email address is verified, and then signs in by email.
 
+### Passwords
+
+Passwords are optional (ADR 0014). New ones are checked against known data breaches with the Have I Been Pwned range API, which only ever receives the first 5 characters of the password's SHA-1 hash. The check is on by default, in development too; if the service can't be reached, the password is accepted and a warning is logged. Set `PC_BREACHED_PASSWORD_CHECK=false` for an instance without outbound internet access.
+
+A password sign-in from a browser or app that hasn't signed in to the account before also needs a code emailed to the account. Browsers are recognized by the `pc_device` cookie (`__Host-pc_device` in production), the apps by the `device_token` returned at sign-in and sent back in the `X-Device-Token` header.
+
 ### Rate limits
 
 The API limits requests per client IP address (IPv6 clients are grouped by /64 network). Defaults are in `config.DefaultRateLimits`:

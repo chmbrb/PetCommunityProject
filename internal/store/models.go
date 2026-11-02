@@ -11,13 +11,17 @@ import (
 )
 
 type Account struct {
-	ID                 uuid.UUID
-	Email              string
-	EmailVerifiedAt    *time.Time
-	WebauthnUserHandle []byte
-	Status             string
-	CreatedAt          time.Time
-	LastActiveAt       *time.Time
+	ID                     uuid.UUID
+	Email                  string
+	EmailVerifiedAt        *time.Time
+	WebauthnUserHandle     []byte
+	Status                 string
+	CreatedAt              time.Time
+	LastActiveAt           *time.Time
+	PasswordHash           *string
+	PasswordChangedAt      *time.Time
+	FailedPasswordAttempts int32
+	PasswordLockedUntil    *time.Time
 }
 
 type Actor struct {
@@ -64,6 +68,15 @@ type InstanceFeatureFlag struct {
 	Enabled   bool
 	Config    []byte
 	UpdatedAt time.Time
+}
+
+type KnownDevice struct {
+	ID         uuid.UUID
+	AccountID  uuid.UUID
+	TokenHash  []byte
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	ExpiresAt  time.Time
 }
 
 type MediaAsset struct {

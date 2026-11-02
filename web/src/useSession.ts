@@ -10,6 +10,7 @@ import {
   finishLogin,
   finishSignup,
   logout,
+  passwordSignIn,
   type EmailProof,
   type Me,
   type SignupDetails,
@@ -54,8 +55,13 @@ export function useSession() {
   }
 
   /** Creates the account with the link or code from a sign-up email. */
-  async function signUpWithEmail(proof: EmailProof) {
-    me.value = await finishEmailSignup(proof)
+  async function signUpWithEmail(proof: EmailProof, password?: string) {
+    me.value = await finishEmailSignup(proof, password)
+  }
+
+  /** Signs in with a password, and the emailed code on a new device. */
+  async function signInWithPassword(email: string, password: string, code?: string) {
+    me.value = await passwordSignIn(email, password, code)
   }
 
   /** Reloads the account, e.g. after verifying the email address. */
@@ -68,5 +74,5 @@ export function useSession() {
     me.value = null
   }
 
-  return { me, loaded, signUp, signIn, signInWithEmail, signUpWithEmail, refresh, signOut }
+  return { me, loaded, signUp, signIn, signInWithEmail, signUpWithEmail, signInWithPassword, refresh, signOut }
 }

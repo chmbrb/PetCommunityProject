@@ -40,6 +40,7 @@ type authTestEnv struct {
 	pool    *pgxpool.Pool
 	rp      virtualwebauthn.RelyingParty
 	emailer *auth.Emailer
+	auth    *auth.Service
 	mail    *mail.Recorder
 	media   *media.Service
 	objects *storage.Storage
@@ -95,6 +96,7 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 		t: t, srv: srv, store: st, pool: pool,
 		rp:      virtualwebauthn.RelyingParty{Name: "Test Instance", ID: "localhost", Origin: testOrigin},
 		emailer: auth.NewEmailer(cfg, st, recorder, logger),
+		auth:    authSvc,
 		mail:    recorder,
 		media:   mediaSvc,
 		objects: objects,

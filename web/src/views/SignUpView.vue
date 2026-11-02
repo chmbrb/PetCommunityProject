@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError, requestEmailSignup } from '../api/client'
 import EmailCodeForm from '../components/EmailCodeForm.vue'
+import PasswordField from '../components/PasswordField.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
@@ -18,6 +19,9 @@ const error = ref<string | null>(null)
 const busy = ref<'passkey' | 'email' | null>(null)
 // Set once the sign-up email is on its way: the address it went to.
 const emailSentTo = ref<string | null>(null)
+// Optional, set when confirming the email.
+const password = ref('')
+const passwordError = ref<string | null>(null)
 
 /** Runs one way of signing up, showing field errors next to their fields. */
 async function attempt(kind: 'passkey' | 'email', action: () => Promise<void>) {
@@ -54,7 +58,17 @@ function withEmail() {
 }
 
 async function confirmCode(code: string) {
-  await signUpWithEmail({ email: emailSentTo.value ?? '', code })
+  passwordError.value = null
+  try {
+    await signUpWithEmail({ email: emailSentTo.value ?? '', code }, password.value || undefined)
+  } catch (err) {
+    // A refused password belongs next to the password field; the code is still good.
+    if (err instanceof ApiError && err.field === 'password') {
+      passwordError.value = err.message
+      return
+    }
+    throw err
+  }
   await router.push({ name: 'home' })
 }
 </script>
@@ -73,6 +87,14 @@ async function confirmCode(code: string) {
         We've sent an email to <strong>{{ emailSentTo }}</strong>. Open the link in it, or
         enter the code from it here. Both work for 1 hour.
       </p>
+      <PasswordField
+        v-model="password"
+        autocomplete="new-password"
+        label="Choose a password (optional)"
+        hint="At least 12 characters. Lets you sign in without waiting for an email. You can also add one later."
+        :error-messages="passwordError ?? undefined"
+        class="mb-4"
+      />
       <EmailCodeForm
         :submit="confirmCode"
         label="Create my account"

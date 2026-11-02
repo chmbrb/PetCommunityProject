@@ -401,3 +401,17 @@ func TestProductionRejectsDevPasswordFromFile(t *testing.T) {
 		t.Errorf("err = %v, want the development password rejected", err)
 	}
 }
+
+func TestBreachedPasswordCheck(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
+	if err != nil || !cfg.BreachedPasswordCheck {
+		t.Errorf("default: check = %v, err %v; want on", cfg.BreachedPasswordCheck, err)
+	}
+	cfg, err = Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x", "PC_BREACHED_PASSWORD_CHECK": "false"}))
+	if err != nil || cfg.BreachedPasswordCheck {
+		t.Errorf("false: check = %v, err %v; want off", cfg.BreachedPasswordCheck, err)
+	}
+	if _, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x", "PC_BREACHED_PASSWORD_CHECK": "maybe"})); err == nil {
+		t.Error("invalid value accepted")
+	}
+}

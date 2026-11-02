@@ -32,8 +32,11 @@ const (
 	PurposeVerifyEmail    = "verify_email"
 	PurposeSignIn         = "sign_in"
 	PurposeSignUp         = "sign_up"
+	PurposeNewDevice      = "new_device"
 	PurposePasskeyAdded   = "passkey_added"
 	PurposePasskeyRemoved = "passkey_removed"
+	// PurposePasswordChanged's Detail says what happened: added, changed, or removed.
+	PurposePasswordChanged = "password_changed"
 )
 
 // QueueEmail is the job queue that sends email.
@@ -93,7 +96,7 @@ func (EmailJob) Kind() string { return "email" }
 // few minutes, so it's retried briefly; a verification email can wait longer.
 func (j EmailJob) InsertOpts() river.InsertOpts {
 	attempts := 10
-	if j.Purpose == PurposeSignIn || j.Purpose == PurposeSignUp {
+	if j.Purpose == PurposeSignIn || j.Purpose == PurposeSignUp || j.Purpose == PurposeNewDevice {
 		attempts = 3
 	}
 	return river.InsertOpts{Queue: QueueEmail, MaxAttempts: attempts}
@@ -165,17 +168,38 @@ func (s *Service) RequestEmailSignup(ctx context.Context, in SignupInput) error 
 }
 
 // FinishEmailSignup creates the account from a sign-up email's link or code, with its
-// address already verified, and starts a session.
-func (s *Service) FinishEmailSignup(ctx context.Context, proof EmailProof, client Client) (Session, error) {
+// address already verified, and starts a session. A password is optional; it's set
+// only now, so it never waits anywhere before the account exists.
+func (s *Service) FinishEmailSignup(ctx context.Context, proof EmailProof, password string, client Client) (Session, error) {
+	var hash *string
+	if password != "" {
+		// The email and handle checks need the sign-up details, so they run below.
+		h, err := s.hashNewPassword(ctx, password, "", "")
+		if err != nil {
+			return Session{}, err
+		}
+		hash = &h
+	}
 	var issued Session
 	err := s.withEmailProof(ctx, proof, PurposeSignUp, func(tx pgx.Tx, q *store.Queries, row emailToken) error {
 		var in SignupInput
 		if err := json.Unmarshal(row.Signup, &in); err != nil {
 			return err
 		}
+		if hash != nil {
+			// Failing here rolls back, so the email can be used again.
+			if err := checkNotIdentity(password, in.Email, in.Handle); err != nil {
+				return err
+			}
+		}
 		accountID, err := s.createAccount(ctx, tx, q, in)
 		if err != nil {
 			return err
+		}
+		if hash != nil {
+			if err := q.SetPasswordHash(ctx, store.SetPasswordHashParams{ID: accountID, PasswordHash: hash}); err != nil {
+				return err
+			}
 		}
 		if _, err := q.MarkEmailVerified(ctx, store.MarkEmailVerifiedParams{ID: accountID, Email: in.Email}); err != nil {
 			return err
@@ -369,7 +393,7 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 	}
 
 	switch job.Purpose {
-	case PurposePasskeyAdded, PurposePasskeyRemoved:
+	case PurposePasskeyAdded, PurposePasskeyRemoved, PurposePasswordChanged:
 		return e.sendNotice(ctx, acct, job)
 	}
 
@@ -386,6 +410,11 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 	case PurposeSignIn:
 		ttl, path, expiresIn, render = signInLinkTTL, "/signin/email", "15 minutes", pcmail.SignInLink
 		withCode = true
+	case PurposeNewDevice:
+		// Code only: it must be entered on the device that gave the password. The
+		// email still gets a token, unused, since every email token has one.
+		ttl, path, expiresIn, render = signInLinkTTL, "/settings", "15 minutes", pcmail.NewDevice
+		withCode = true
 	default:
 		return river.JobCancel(fmt.Errorf("unknown email purpose %q", job.Purpose))
 	}
@@ -397,7 +426,11 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 	if err != nil {
 		return err
 	}
-	data.DisplayName, data.ExpiresIn = acct.DisplayName, expiresIn
+	data.DisplayName, data.ExpiresIn, data.Detail = acct.DisplayName, expiresIn, job.Detail
+	if job.Purpose == PurposeNewDevice {
+		// The link points at the settings page, to change the password if it wasn't them.
+		data.Link = e.publicURL + path
+	}
 	msg, err := render(acct.Email, data)
 	if err != nil {
 		return river.JobCancel(err)
@@ -466,8 +499,11 @@ func (e *Emailer) issue(ctx context.Context, params store.CreateEmailTokenParams
 // sendNotice emails a security notice that links to the account settings.
 func (e *Emailer) sendNotice(ctx context.Context, acct store.GetAccountForEmailRow, job EmailJob) error {
 	render := pcmail.PasskeyAdded
-	if job.Purpose == PurposePasskeyRemoved {
+	switch job.Purpose {
+	case PurposePasskeyRemoved:
 		render = pcmail.PasskeyRemoved
+	case PurposePasswordChanged:
+		render = pcmail.PasswordChanged
 	}
 	msg, err := render(acct.Email, pcmail.LinkEmail{
 		InstanceName: e.instanceName,

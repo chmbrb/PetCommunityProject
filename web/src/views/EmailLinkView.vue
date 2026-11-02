@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError } from '../api/client'
+import PasswordField from '../components/PasswordField.vue'
 import { takeLinkToken } from '../linkToken'
 import { useSession } from '../useSession'
 
@@ -34,18 +35,28 @@ const text = computed(() =>
 const token = takeLinkToken()
 const error = ref<string | null>(token ? null : 'This link is incomplete. Please request a new email.')
 const busy = ref(false)
+// Sign-up only: an optional password.
+const password = ref('')
+const passwordError = ref<string | null>(null)
 
 async function finish() {
   if (!token) {
     return
   }
   error.value = null
+  passwordError.value = null
   busy.value = true
   try {
-    await (props.purpose === 'signup' ? signUpWithEmail({ token }) : signInWithEmail({ token }))
+    await (props.purpose === 'signup'
+      ? signUpWithEmail({ token }, password.value || undefined)
+      : signInWithEmail({ token }))
     await router.replace({ name: 'home' })
   } catch (err) {
-    error.value = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
+    if (err instanceof ApiError && err.field === 'password') {
+      passwordError.value = err.message
+    } else {
+      error.value = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
+    }
   } finally {
     busy.value = false
   }
@@ -74,6 +85,16 @@ async function finish() {
       <p class="text-body-1 mb-6">
         {{ text.intro }}
       </p>
+      <PasswordField
+        v-if="purpose === 'signup'"
+        v-model="password"
+        autocomplete="new-password"
+        label="Choose a password (optional)"
+        hint="At least 12 characters. Lets you sign in without waiting for an email. You can also add one later."
+        :error-messages="passwordError ?? undefined"
+        :disabled="busy"
+        class="mb-4"
+      />
       <v-btn
         color="primary"
         size="large"
