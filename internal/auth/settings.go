@@ -26,7 +26,7 @@ const ReauthWindow = 15 * time.Minute
 
 var (
 	ErrReauthRequired = errors.New("please confirm it's you by signing in again")
-	ErrLastPasskey    = errors.New("you can't remove your only passkey; add another one first")
+	ErrLastPasskey    = errors.New("confirm your email address before removing your only passkey, so you can still sign in by email")
 	ErrNotFound       = errors.New("not found")
 )
 
@@ -203,8 +203,9 @@ func (s *Service) RenamePasskey(ctx context.Context, p Principal, id uuid.UUID, 
 	return nil
 }
 
-// RemovePasskey deletes one of the account's passkeys and emails a notice. The last
-// passkey can't be removed.
+// RemovePasskey deletes one of the account's passkeys and emails a notice. Passkeys
+// are optional, so the last one can go too, but only once the email address is
+// verified: email sign-in is then the way back in.
 func (s *Service) RemovePasskey(ctx context.Context, p Principal, id uuid.UUID) error {
 	if err := requireRecentSignIn(p); err != nil {
 		return err
@@ -222,7 +223,13 @@ func (s *Service) RemovePasskey(ctx context.Context, p Principal, id uuid.UUID) 
 			return err
 		}
 		if count <= 1 {
-			return ErrLastPasskey
+			acct, err := q.GetAccountForEmail(ctx, p.AccountID)
+			if err != nil {
+				return err
+			}
+			if acct.EmailVerifiedAt == nil {
+				return ErrLastPasskey
+			}
 		}
 		if _, err := q.DeletePasskey(ctx, store.DeletePasskeyParams{ID: id, AccountID: p.AccountID}); err != nil {
 			return err

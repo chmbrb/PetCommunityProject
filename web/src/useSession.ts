@@ -5,10 +5,12 @@ import {
   beginLogin,
   beginSignup,
   fetchMe,
+  finishEmailSignIn,
+  finishEmailSignup,
   finishLogin,
-  finishSignInLink,
   finishSignup,
   logout,
+  type EmailProof,
   type Me,
   type SignupDetails,
 } from './api/client'
@@ -46,9 +48,14 @@ export function useSession() {
     me.value = await finishLogin(challenge_id, credential)
   }
 
-  /** Signs in with the token from a sign-in email. */
-  async function signInWithLink(token: string) {
-    me.value = await finishSignInLink(token)
+  /** Signs in with the link or code from a sign-in email. */
+  async function signInWithEmail(proof: EmailProof) {
+    me.value = await finishEmailSignIn(proof)
+  }
+
+  /** Creates the account with the link or code from a sign-up email. */
+  async function signUpWithEmail(proof: EmailProof) {
+    me.value = await finishEmailSignup(proof)
   }
 
   /** Reloads the account, e.g. after verifying the email address. */
@@ -61,5 +68,5 @@ export function useSession() {
     me.value = null
   }
 
-  return { me, loaded, signUp, signIn, signInWithLink, refresh, signOut }
+  return { me, loaded, signUp, signIn, signInWithEmail, signUpWithEmail, refresh, signOut }
 }

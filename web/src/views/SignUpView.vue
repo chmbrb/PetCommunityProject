@@ -3,28 +3,31 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
-import { ApiError } from '../api/client'
+import { ApiError, requestEmailSignup } from '../api/client'
+import EmailCodeForm from '../components/EmailCodeForm.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
 const router = useRouter()
-const { signUp } = useSession()
+const { signUp, signUpWithEmail } = useSession()
 
 const supported = browserSupportsWebAuthn()
 const form = reactive({ email: '', handle: '', display_name: '' })
 const fieldErrors = reactive<Record<string, string>>({})
 const error = ref<string | null>(null)
-const busy = ref(false)
+const busy = ref<'passkey' | 'email' | null>(null)
+// Set once the sign-up email is on its way: the address it went to.
+const emailSentTo = ref<string | null>(null)
 
-async function submit() {
+/** Runs one way of signing up, showing field errors next to their fields. */
+async function attempt(kind: 'passkey' | 'email', action: () => Promise<void>) {
   error.value = null
   for (const key of Object.keys(fieldErrors)) {
     delete fieldErrors[key]
   }
-  busy.value = true
+  busy.value = kind
   try {
-    await signUp({ ...form })
-    await router.push({ name: 'home' })
+    await action()
   } catch (err) {
     if (err instanceof ApiError && err.field) {
       fieldErrors[err.field] = err.message
@@ -32,8 +35,27 @@ async function submit() {
       error.value = describePasskeyError(err)
     }
   } finally {
-    busy.value = false
+    busy.value = null
   }
+}
+
+function withPasskey() {
+  return attempt('passkey', async () => {
+    await signUp({ ...form })
+    await router.push({ name: 'home' })
+  })
+}
+
+function withEmail() {
+  return attempt('email', async () => {
+    await requestEmailSignup({ ...form })
+    emailSentTo.value = form.email.trim()
+  })
+}
+
+async function confirmCode(code: string) {
+  await signUpWithEmail({ email: emailSentTo.value ?? '', code })
+  await router.push({ name: 'home' })
 }
 </script>
 
@@ -45,76 +67,103 @@ async function submit() {
     <h1 class="text-h4 mb-2">
       Create an account
     </h1>
-    <p class="text-body-1 mb-6">
-      You'll sign in with a passkey: your fingerprint, face, or device PIN. There's no
-      password to remember.
-    </p>
 
-    <v-alert
-      v-if="!supported"
-      type="warning"
-      variant="tonal"
-      class="mb-4"
-    >
-      This browser doesn't support passkeys. Please use an up-to-date browser.
-    </v-alert>
-
-    <v-form @submit.prevent="submit">
-      <v-text-field
-        v-model="form.display_name"
-        label="Your name"
-        autocomplete="name"
-        :error-messages="fieldErrors.display_name"
-        :disabled="busy"
-        required
+    <template v-if="emailSentTo">
+      <p class="text-body-1 mb-6">
+        We've sent an email to <strong>{{ emailSentTo }}</strong>. Open the link in it, or
+        enter the code from it here. Both work for 1 hour.
+      </p>
+      <EmailCodeForm
+        :submit="confirmCode"
+        label="Create my account"
       />
-      <v-text-field
-        v-model="form.handle"
-        label="Handle"
-        prefix="@"
-        hint="3–30 lowercase letters, numbers, or underscores. Shown publicly."
-        persistent-hint
-        autocomplete="username"
-        autocapitalize="none"
-        spellcheck="false"
-        :error-messages="fieldErrors.handle"
-        :disabled="busy"
-        class="mb-2"
-        required
-      />
-      <v-text-field
-        v-model="form.email"
-        label="Email"
-        type="email"
-        hint="Kept private. Used to recover your account."
-        persistent-hint
-        autocomplete="email"
-        :error-messages="fieldErrors.email"
-        :disabled="busy"
-        class="mb-4"
-        required
-      />
+      <p class="text-body-2 mt-6">
+        No email? Check your spam folder, or
+        <a
+          href="#"
+          @click.prevent="emailSentTo = null"
+        >go back and check the address</a>.
+      </p>
+    </template>
 
-      <v-alert
-        v-if="error"
-        type="error"
-        variant="tonal"
-        class="mb-4"
-      >
-        {{ error }}
-      </v-alert>
+    <template v-else>
+      <p class="text-body-1 mb-6">
+        We recommend a passkey: you sign in with your fingerprint, face, or device PIN, and
+        there's no password to remember or steal. You can also sign in with codes we email
+        you, and add a passkey later.
+      </p>
 
-      <v-btn
-        type="submit"
-        color="primary"
-        size="large"
-        block
-        :loading="busy"
-        :disabled="!supported"
-      >
-        Create account with a passkey
-      </v-btn>
-    </v-form>
+      <v-form @submit.prevent="supported ? withPasskey() : withEmail()">
+        <v-text-field
+          v-model="form.display_name"
+          label="Your name"
+          autocomplete="name"
+          :error-messages="fieldErrors.display_name"
+          :disabled="busy !== null"
+          required
+        />
+        <v-text-field
+          v-model="form.handle"
+          label="Handle"
+          prefix="@"
+          hint="3–30 lowercase letters, numbers, or underscores. Shown publicly."
+          persistent-hint
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          :error-messages="fieldErrors.handle"
+          :disabled="busy !== null"
+          class="mb-2"
+          required
+        />
+        <v-text-field
+          v-model="form.email"
+          label="Email"
+          type="email"
+          hint="Kept private. Used to sign in and recover your account."
+          persistent-hint
+          autocomplete="email"
+          :error-messages="fieldErrors.email"
+          :disabled="busy !== null"
+          class="mb-4"
+          required
+        />
+
+        <v-alert
+          v-if="error"
+          type="error"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ error }}
+        </v-alert>
+
+        <v-btn
+          v-if="supported"
+          type="submit"
+          color="primary"
+          size="large"
+          block
+          class="mb-3"
+          :loading="busy === 'passkey'"
+          :disabled="busy !== null"
+        >
+          Create account with a passkey
+        </v-btn>
+        <v-btn
+          :type="supported ? 'button' : 'submit'"
+          :color="supported ? undefined : 'primary'"
+          :variant="supported ? 'outlined' : 'elevated'"
+          size="large"
+          block
+          :loading="busy === 'email'"
+          :disabled="busy !== null"
+          @click="supported && withEmail()"
+        >
+          Continue with email
+        </v-btn>
+      </v-form>
+    </template>
 
     <p class="text-body-2 mt-6">
       Already have an account?

@@ -3,5 +3,7 @@ Hi {{.DisplayName}},
 Use this link to sign in to {{.InstanceName}}:
 
 {{.Link}}
-
-The link works once, for {{.ExpiresIn}}. If you didn't ask to sign in, you can ignore this email: nobody can sign in without the link.
+{{if .Code}}
+Or enter this code where you asked to sign in: {{.Code}}
+{{end}}
+{{if .Code}}The link and code work{{else}}The link works{{end}} once, for {{.ExpiresIn}}. If you didn't ask to sign in, you can ignore this email: nobody can sign in without it.{{if .Code}} Never share the code: {{.InstanceName}} will never ask you for it.{{end}}

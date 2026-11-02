@@ -48,12 +48,15 @@ type AuthIdentity struct {
 type EmailToken struct {
 	ID        uuid.UUID
 	TokenHash []byte
-	AccountID uuid.UUID
+	AccountID uuid.NullUUID
 	Purpose   string
 	Email     string
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	CreatedAt time.Time
+	CodeHash  []byte
+	Attempts  int32
+	Signup    []byte
 }
 
 type InstanceFeatureFlag struct {

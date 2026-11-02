@@ -3,7 +3,10 @@
 package server
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/chmbrb/PetCommunityProject/internal/auth"
 )
 
 type signInLinkRequest struct {
@@ -12,6 +15,14 @@ type signInLinkRequest struct {
 
 type tokenRequest struct {
 	Token string `json:"token"`
+}
+
+// emailProofRequest finishes a sign-in or sign-up with what came in the email: the
+// link's token, or the address and the code.
+type emailProofRequest struct {
+	Token string `json:"token"`
+	Email string `json:"email"`
+	Code  string `json:"code"`
 	// Client is "web" (session cookie, the default) or "mobile" (token in the response).
 	Client string `json:"client"`
 }
@@ -34,9 +45,34 @@ func (s *Server) handleSignInLinkRequest(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusAccepted, acceptedResponse{Status: "sent_if_registered"})
 }
 
-// handleSignInLinkFinish signs in with the token from a sign-in email.
+// handleSignInLinkFinish signs in with the link or code from a sign-in email.
 func (s *Server) handleSignInLinkFinish(w http.ResponseWriter, r *http.Request) {
-	var req tokenRequest
+	s.finishWithEmail(w, r, http.StatusOK, s.auth.FinishEmailSignIn)
+}
+
+// handleEmailSignupRequest checks the sign-up details and emails a link and code that
+// create the account.
+func (s *Server) handleEmailSignupRequest(w http.ResponseWriter, r *http.Request) {
+	var in auth.SignupInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := s.auth.RequestEmailSignup(r.Context(), in); err != nil {
+		s.writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, acceptedResponse{Status: "sent"})
+}
+
+// handleEmailSignupFinish creates the account with the link or code from a sign-up email.
+func (s *Server) handleEmailSignupFinish(w http.ResponseWriter, r *http.Request) {
+	s.finishWithEmail(w, r, http.StatusCreated, s.auth.FinishEmailSignup)
+}
+
+func (s *Server) finishWithEmail(w http.ResponseWriter, r *http.Request, status int,
+	fn func(context.Context, auth.EmailProof, auth.Client) (auth.Session, error),
+) {
+	var req emailProofRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
@@ -44,12 +80,12 @@ func (s *Server) handleSignInLinkFinish(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	sess, err := s.auth.FinishSignInLink(r.Context(), req.Token, client)
+	sess, err := fn(r.Context(), auth.EmailProof{Token: req.Token, Email: req.Email, Code: req.Code}, client)
 	if err != nil {
 		s.writeAuthError(w, r, err)
 		return
 	}
-	s.startSession(w, r, http.StatusOK, sess, client)
+	s.startSession(w, r, status, sess, client)
 }
 
 // handleVerifyEmail confirms an email address with the token from a verification email.

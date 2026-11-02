@@ -74,6 +74,12 @@ export interface SignupDetails {
 }
 
 /**
+ * What a person brings back from a sign-in or sign-up email: the link's token, or the
+ * address the email went to and the 6-digit code in it.
+ */
+export type EmailProof = { token: string } | { email: string; code: string }
+
+/**
  * Returns the origin API requests go to. The web app is served by its own
  * instance, so it uses relative URLs. Native apps must name an instance (ADR 0018).
  */
@@ -167,13 +173,25 @@ export function logout() {
   return request<void>('POST', '/api/v1/auth/logout')
 }
 
-/** Emails a sign-in link if the address has an account. The answer is the same either way. */
+/**
+ * Emails a sign-in link and code if the address has an account. The answer is the same
+ * either way.
+ */
 export function requestSignInLink(email: string) {
   return request<{ status: string }>('POST', '/api/v1/auth/login/email/request', { email })
 }
 
-export function finishSignInLink(token: string) {
-  return request<Me>('POST', '/api/v1/auth/login/email/finish', { token })
+export function finishEmailSignIn(proof: EmailProof) {
+  return request<Me>('POST', '/api/v1/auth/login/email/finish', proof)
+}
+
+/** Checks the details and emails a link and code that create the account. */
+export function requestEmailSignup(details: SignupDetails) {
+  return request<{ status: string }>('POST', '/api/v1/auth/signup/email/request', details)
+}
+
+export function finishEmailSignup(proof: EmailProof) {
+  return request<Me>('POST', '/api/v1/auth/signup/email/finish', proof)
 }
 
 export function verifyEmail(token: string) {

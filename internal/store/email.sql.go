@@ -12,11 +12,56 @@ import (
 	"github.com/google/uuid"
 )
 
+const consumeEmailCode = `-- name: ConsumeEmailCode :one
+WITH latest AS (
+    SELECT e.id FROM email_tokens e
+    WHERE e.email = $3 AND e.purpose = $4 AND e.code_hash IS NOT NULL
+    ORDER BY e.id DESC
+    LIMIT 1
+)
+UPDATE email_tokens t
+SET used_at = now()
+FROM latest
+WHERE t.id = latest.id
+  AND t.code_hash = $1
+  AND t.used_at IS NULL AND t.expires_at > now()
+  AND t.attempts < $2::integer
+RETURNING t.account_id, t.email, t.signup
+`
+
+type ConsumeEmailCodeParams struct {
+	CodeHash    []byte
+	MaxAttempts int32
+	Email       string
+	Purpose     string
+}
+
+type ConsumeEmailCodeRow struct {
+	AccountID uuid.NullUUID
+	Email     string
+	Signup    []byte
+}
+
+// Like ConsumeEmailToken, for the code in the email. Only the newest token sent to
+// the address accepts codes, and only until it has had too many wrong attempts, so
+// older emails' codes can't be guessed once a newer one is used up.
+func (q *Queries) ConsumeEmailCode(ctx context.Context, arg ConsumeEmailCodeParams) (ConsumeEmailCodeRow, error) {
+	row := q.db.QueryRow(ctx, consumeEmailCode,
+		arg.CodeHash,
+		arg.MaxAttempts,
+		arg.Email,
+		arg.Purpose,
+	)
+	var i ConsumeEmailCodeRow
+	err := row.Scan(&i.AccountID, &i.Email, &i.Signup)
+	return i, err
+}
+
 const consumeEmailToken = `-- name: ConsumeEmailToken :one
 UPDATE email_tokens
 SET used_at = now()
 WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
-RETURNING account_id, email
+RETURNING account_id, email, signup
 `
 
 type ConsumeEmailTokenParams struct {
@@ -25,29 +70,32 @@ type ConsumeEmailTokenParams struct {
 }
 
 type ConsumeEmailTokenRow struct {
-	AccountID uuid.UUID
+	AccountID uuid.NullUUID
 	Email     string
+	Signup    []byte
 }
 
 // Marks an unused, unexpired token as used and returns it, so each works only once.
 func (q *Queries) ConsumeEmailToken(ctx context.Context, arg ConsumeEmailTokenParams) (ConsumeEmailTokenRow, error) {
 	row := q.db.QueryRow(ctx, consumeEmailToken, arg.TokenHash, arg.Purpose)
 	var i ConsumeEmailTokenRow
-	err := row.Scan(&i.AccountID, &i.Email)
+	err := row.Scan(&i.AccountID, &i.Email, &i.Signup)
 	return i, err
 }
 
 const createEmailToken = `-- name: CreateEmailToken :exec
-INSERT INTO email_tokens (id, token_hash, account_id, purpose, email, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO email_tokens (id, token_hash, code_hash, account_id, purpose, email, signup, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type CreateEmailTokenParams struct {
 	ID        uuid.UUID
 	TokenHash []byte
-	AccountID uuid.UUID
+	CodeHash  []byte
+	AccountID uuid.NullUUID
 	Purpose   string
 	Email     string
+	Signup    []byte
 	ExpiresAt time.Time
 }
 
@@ -55,9 +103,11 @@ func (q *Queries) CreateEmailToken(ctx context.Context, arg CreateEmailTokenPara
 	_, err := q.db.Exec(ctx, createEmailToken,
 		arg.ID,
 		arg.TokenHash,
+		arg.CodeHash,
 		arg.AccountID,
 		arg.Purpose,
 		arg.Email,
+		arg.Signup,
 		arg.ExpiresAt,
 	)
 	return err
@@ -147,4 +197,31 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, arg MarkEmailVerifiedPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const recordEmailCodeFailure = `-- name: RecordEmailCodeFailure :exec
+WITH latest AS (
+    SELECT e.id FROM email_tokens e
+    WHERE e.email = $2 AND e.purpose = $3 AND e.code_hash IS NOT NULL
+    ORDER BY e.id DESC
+    LIMIT 1
+)
+UPDATE email_tokens t
+SET attempts = t.attempts + 1,
+    used_at = CASE WHEN t.attempts + 1 >= $1::integer THEN now() ELSE t.used_at END
+FROM latest
+WHERE t.id = latest.id AND t.used_at IS NULL
+`
+
+type RecordEmailCodeFailureParams struct {
+	MaxAttempts int32
+	Email       string
+	Purpose     string
+}
+
+// Counts a wrong code against the newest token sent to the address, and uses the
+// token up (link included) when it reaches the limit.
+func (q *Queries) RecordEmailCodeFailure(ctx context.Context, arg RecordEmailCodeFailureParams) error {
+	_, err := q.db.Exec(ctx, recordEmailCodeFailure, arg.MaxAttempts, arg.Email, arg.Purpose)
+	return err
 }

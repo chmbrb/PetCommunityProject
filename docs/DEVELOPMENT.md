@@ -215,6 +215,8 @@ The API never sends email itself: it queues a job, and the `worker` service send
 
 Email links point to `PC_PUBLIC_URL` (by default `https://` + the instance domain). One-time tokens are put in the link's `#fragment`, which browsers never send to the server, and only their hashes are stored. Emails per recipient address are limited (`EmailRecipient` in `config.DefaultRateLimits`), so nobody can flood someone's inbox with sign-in links.
 
+Sign-in and sign-up emails carry both a link and a 6-digit code for the same sign-in, for when the link opens in the wrong browser or outside the app. Signing up by email creates nothing until the link or code is used: the details wait with the email's token, and the account is created, with its address already verified, when the person confirms. Passkeys are optional; an account can remove its last passkey once its email address is verified, and then signs in by email.
+
 ### Rate limits
 
 The API limits requests per client IP address (IPv6 clients are grouped by /64 network). Defaults are in `config.DefaultRateLimits`:
