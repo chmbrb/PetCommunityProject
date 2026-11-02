@@ -32,13 +32,17 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 ### Identity and actors
 
-**Account**: a login. `id`, `email` (unique; verified later by email; may be an Apple relay address), `webauthn_user_handle` (64 random bytes identifying the account to passkeys; never derived from the ID or email), `password_hash` (argon2id, nullable), `mfa_enabled`, `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
+**Account**: a login. `id`, `email` (unique; verified later by email; may be an Apple relay address), `webauthn_user_handle` (64 random bytes identifying the account to passkeys; never derived from the ID or email), `password_hash` (argon2id, nullable), `status` (active / restricted / suspended / banned / deleted), `created_at`, `last_active_at`.
 
 **Session**: a signed-in device. `id`, `token_hash` (SHA-256 of the cookie or bearer token), `account_id`, `client` (web / mobile), `user_agent` (for the signed-in devices list; kept only as long as the session), `created_at` (when it signed in; used for step-up checks), `last_seen_at`, `expires_at`, `revoked_at`. Signing in again from the same client replaces its previous session.
 
-**EmailToken**: a one-time link token sent by email. `id`, `token_hash` (SHA-256; the token itself exists only in the email), `account_id`, `purpose` (verify_email / sign_in), `email` (the address it was sent to; the token stops working if the account's email changes), `expires_at`, `used_at`. Sign-in links don't need an AuthIdentity row: any account with an email address can use them.
+**EmailToken**: a one-time link token sent by email. `id`, `token_hash` (SHA-256; the token itself exists only in the email), `account_id`, `purpose` (verify_email / sign_in / new_device), `code_hash` (the 6-digit code sent with the link, for sign-in and new-device checks; at most 5 wrong attempts), `attempts`, `email` (the address it was sent to; the token stops working if the account's email changes), `expires_at`, `used_at`. Sign-in links don't need an AuthIdentity row: any account with an email address can use them.
 
 **AuthIdentity**: one sign-in method attached to an Account. `id`, `account_id`, `kind` (passkey / password / magic_link / oidc), `provider` (google / apple / other OIDC issuer; null for local methods), `subject` (provider's stable user ID; unique per provider), `email_at_link`, `credential_ref` (passkey public key etc.), `created_at`, `last_used_at`. An account must keep at least one. OIDC identities are matched by `provider` + `subject`, never by email.
+
+**TotpFactor**: an authenticator app or password manager entry used as a second factor (ADR 0014). `id`, `account_id`, `name`, `secret_encrypted` (AES-256-GCM under the API's MFA key), `key_id`, `last_used_step` (rejects replayed codes), `confirmed_at` (null until the first valid code), `created_at`, `last_used_at`. An account has MFA when it has a confirmed TotpFactor or a passkey.
+
+**RecoveryCode**: `id`, `account_id`, `code_hash`, `created_at`, `used_at`. Ten per set; generating a new set deletes the old one.
 
 **Actor**: the public identity. `id`, `type` (person / organization / group), `handle` (unique per instance), `display_name`, `summary`, `avatar_media_id`, `ap_id` (URI), `inbox_uri`, `outbox_uri`, `public_key_pem`, `private_key_enc` (encrypted; see ADR 0012), `private_key_kid`, `keys_created_at`, `is_local`, `instance_id` (for remote actors later), `approx_location_id`. For local actors, `ap_id`, `inbox_uri`, and `outbox_uri` are derived from the instance domain and the ID rather than stored; they're stored only for remote actors (Phase 5).
 

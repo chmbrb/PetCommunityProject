@@ -1,7 +1,7 @@
 # 0019. Sign-in options: passkeys, magic links, and Google/Apple SSO
 
 - **Status:** Accepted
-- **Date:** 2026-10-29
+- **Date:** 2026-10-29 (amended 2026-11-02: passkeys optional, email codes)
 - **Related:** PLAN.md decision #9; [0014](0014-authentication-sessions-mfa.md), [0017](0017-instance-feature-flags.md), [0018](0018-mobile-apps-capacitor.md); THREAT_MODEL.md S3–S6
 
 ## Context
@@ -19,8 +19,8 @@ Many people, especially prospective adopters, give up when asked to create yet a
 
 | Method | Default | Notes |
 |--------|---------|-------|
-| Passkey | **Primary signup path** | No password; syncs through Google/Apple/other password managers |
-| Email magic link | On | One-time sign-in link, short expiry, single use |
+| Passkey | On, **recommended** | Optional: people can sign up and stay signed in without one. No password; syncs through Google/Apple/other password managers |
+| Email link or code | On | One email with a one-time link and a 6-digit code; short expiry, single use ([0014](0014-authentication-sessions-mfa.md)) |
 | Password | On | For people who prefer it; rules from [0014](0014-authentication-sessions-mfa.md) |
 | Google | On (main instance), per-instance flag | Standard OpenID Connect |
 | Apple | Main instance (web) and iOS app once the App Store account exists; per-instance flag | Optional for other instances: only operators who pay for their own Apple Developer account can offer it on the web |
@@ -31,7 +31,7 @@ Many people, especially prospective adopters, give up when asked to create yet a
 - **Generic OpenID Connect** (`coreos/go-oidc` + `golang.org/x/oauth2`) rather than provider-specific SDKs. Providers are configured per instance, which also allows a later option for shelters to sign their staff in with their own Google Workspace or Microsoft 365 accounts.
 - **Strict token validation:** PKCE, `state` and `nonce` checks, issuer and audience validation, signature checks against the provider's published keys. Only email addresses the provider marks as verified are trusted.
 - **Per-instance feature flag** `sso_providers` ([0017](0017-instance-feature-flags.md)): on for the main instance, off by default for other instances until the operator registers their own provider credentials. Setup docs walk operators through registration.
-- **Multiple sign-in methods per account:** an account can have any mix of passkeys, password, magic link, and linked providers (`AuthIdentity` in DOMAIN_MODEL.md). Users are encouraged to add a second method so losing a Google or Apple account doesn't lock them out. The last remaining method can't be removed.
+- **Multiple sign-in methods per account:** an account can have any mix of passkeys, password, email sign-in, and linked providers, plus TOTP as a second factor (`AuthIdentity` in DOMAIN_MODEL.md). Users are encouraged to add a second method so losing a Google or Apple account doesn't lock them out. The last remaining method can't be removed.
 - **Account linking is always explicit:** a new SSO login whose email matches an existing account is **never** merged automatically. The user must sign in to the existing account by another method and confirm the link. Linking and unlinking send an email alert and are written to the audit log.
 - **No trust from SSO:** SSO accounts start as `unverified`, like any other signup. Verification tiers are earned the same way for everyone.
 - **MFA still required for privileged roles:** verified-organization members, moderators, community owners, and admins must register a passkey or TOTP on the platform itself, regardless of how they sign in. The platform can't reliably tell whether the user's Google or Apple account uses two-factor sign-in.

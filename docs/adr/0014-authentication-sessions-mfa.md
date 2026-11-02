@@ -1,7 +1,7 @@
 # 0014. Authentication: server-side sessions and MFA
 
 - **Status:** Accepted
-- **Date:** 2026-10-29
+- **Date:** 2026-10-29 (amended 2026-11-02: optional passkeys, TOTP details, email codes)
 - **Related:** THREAT_MODEL.md S1, S2, T4, E1, M1; PERSONAS.md (Account taker); [0018](0018-mobile-apps-capacitor.md), [0019](0019-sign-in-options-passkeys-sso.md)
 
 ## Context
@@ -10,15 +10,23 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 
 ## Decision
 
-- **Sign-in methods:** passkeys (primary), email magic links, passwords, and Google/Apple SSO. See [0019](0019-sign-in-options-passkeys-sso.md). Every method ends in the session model below.
+- **Sign-in methods:** passkeys (recommended, never required), email links or codes, passwords, and Google/Apple SSO. People can sign up with any of them. See [0019](0019-sign-in-options-passkeys-sso.md). Every method ends in the session model below.
 - **Passwords** (optional): argon2id hashing; minimum length 12; rejected if found in breached-password lists (k-anonymity range check or a bundled list); login rate limits and temporary lockouts.
 - **Sessions:** opaque random 256-bit tokens, stored only as a SHA-256 hash in Postgres; sent as `HttpOnly; Secure; SameSite=Lax` cookies named `__Host-pc_session` (production); a new session is issued on every sign-in; all sessions revoked on password change. Web sessions last 30 days, mobile sessions 180 days. No JWTs for browser sessions.
 - **CSRF:** SameSite cookies plus Go's `http.CrossOriginProtection` (standard library since Go 1.25), which rejects cross-origin state-changing requests using the browser's `Sec-Fetch-Site` and `Origin` headers. This replaces the CSRF tokens originally planned: it gives the same protection without tokens to manage. The native apps' origins are trusted, since they use bearer tokens.
 - **Mobile apps:** sign-in returns an opaque bearer token (same session table, marked as a mobile session with a device name) stored in Keychain / Android Keystore. Tokens are long-lived but revocable, rotate on use of sensitive actions, and are listed in the user's "signed-in devices" page. Bearer-token requests don't need CSRF tokens. Biometric unlock can protect the app locally but doesn't replace MFA.
-- **MFA:** passkeys/WebAuthn and TOTP, with one-time recovery codes.
+- **MFA:** passkeys/WebAuthn and TOTP, with one-time recovery codes. Either kind of factor satisfies an MFA requirement; neither is mandatory on its own.
   - **Required** for members of verified organizations, community moderators and owners, and instance admins, including people who sign in with Google or Apple.
-  - Optional for everyone else.
-- **Alerts:** email on new-device login, MFA changes, and email changes. (Built so far: emails when a passkey is added or removed.)
+  - Optional for everyone else, and offered to everyone from Phase 1.
+  - **TOTP (RFC 6238)** with the settings every authenticator app supports: 6 digits, 30-second steps, SHA-1, accepting one step of clock drift either way. Setup shows a QR code (phone authenticator apps), the setup key as text with a copy button (password managers such as 1Password and Bitwarden, which can then fill the code in), and an `otpauth://` link (setting up on the same phone). It's enabled only after the person enters a valid code.
+  - **Replay protection:** the last accepted time step is stored, so a code can't be reused, even within its 30 seconds.
+  - **Attempt limits:** code entry has the same rate limits and temporary lockouts as passwords.
+  - **TOTP secrets are encrypted at rest** (AES-256-GCM) with their own key, a new `mfa_key` secret file given only to the API, which checks codes. It can't be `PC_SECRET_KEY`, which only the worker holds ([0012](0012-activitypub-shaped-model-federation-deferred.md)). A database dump alone then doesn't expose the secrets.
+  - **Recovery codes:** 10 random single-use codes, stored only as hashes and shown once. Using one sends an email alert. People can generate a new set, which invalidates the old one.
+  - **Changes need step-up:** adding or removing TOTP, or generating new recovery codes, needs a recent sign-in, like passkey changes, and sends an email alert.
+  - **No lock-out:** the last MFA factor can't be removed while the person's role requires MFA.
+- **Email codes:** sign-in emails carry a one-time link and a 6-digit code for the same sign-in; the code is for when the link opens in the wrong browser or outside the app. The code is stored as a hash, expires with the link, and allows 5 wrong attempts. Password sign-ins on a new device, by accounts without MFA, also need an emailed code. Email codes never count as MFA: they prove only access to the inbox, which a magic link already proves, and inbox takeover is a common route to account takeover. NIST SP 800-63B excludes email for the same reason.
+- **Alerts:** email on new-device login, MFA changes, recovery code use, and email changes. (Built so far: emails when a passkey is added or removed.)
 - **Email verification** before posting or applying.
 - **Step-up:** sensitive actions (role grants, verification decisions, data exports) require re-entering MFA within the last few minutes. Built so far: adding or removing a passkey requires a sign-in within the last 15 minutes (`auth.ReauthWindow`); otherwise the person confirms by signing in again with a passkey, which replaces their session rather than adding one.
 - **Signed-in devices:** people can see their sessions (with a device label from the User-Agent, stored only as long as the session) and sign out any of them, or all but the current one.
@@ -36,3 +44,5 @@ Takeover of a verified shelter account is one of the top MVP risks: it turns a t
 - **JWT access tokens:** hard to revoke, easy to mishandle in a browser.
 - **External identity provider (Keycloak, Authentik):** powerful, but another heavy service to run.
 - **SMS codes:** vulnerable to SIM swapping, and they cost money.
+- **Email codes as a second factor:** see "Email codes" above; they're offered as a sign-in method and a new-device check only.
+- **Requiring passkeys:** the most phishing-resistant option, but some people's devices, browsers, or habits don't suit them yet, and a hard requirement would turn them away at sign-up. Passkeys stay the recommended option.
