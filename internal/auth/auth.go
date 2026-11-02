@@ -63,6 +63,9 @@ type Session struct {
 	Token     string
 	ExpiresAt time.Time
 	AccountID uuid.UUID
+	// DeviceToken is set when the device had no device token yet: the client keeps it
+	// so later password sign-ins from this device are recognized.
+	DeviceToken string
 }
 
 // Principal is the signed-in account behind a request.
@@ -101,6 +104,10 @@ type Service struct {
 	logger *slog.Logger
 	// emailLimiter caps emails per recipient address.
 	emailLimiter *ratelimit.Limiter
+	// breaches checks new passwords against known breaches; nil turns the check off.
+	breaches BreachChecker
+	// hashing holds one slot per password hash in progress.
+	hashing chan struct{}
 }
 
 // New configures passkeys for this instance. Emails are queued on queue and sent by
@@ -122,10 +129,20 @@ func New(cfg config.Config, db *database.Store, queue JobQueue, logger *slog.Log
 	if err != nil {
 		return nil, fmt.Errorf("configure passkeys: %w", err)
 	}
-	return &Service{
+	svc := &Service{
 		db: db, wa: wa, queue: queue, logger: logger,
 		emailLimiter: ratelimit.New(cfg.RateLimits.EmailRecipient),
-	}, nil
+		hashing:      make(chan struct{}, hashSlots),
+	}
+	if cfg.BreachedPasswordCheck {
+		svc.breaches = NewPwnedPasswords()
+	}
+	return svc, nil
+}
+
+// SetBreachChecker replaces the breached-password check (nil turns it off). For tests.
+func (s *Service) SetBreachChecker(b BreachChecker) {
+	s.breaches = b
 }
 
 // passkeyUser adapts an account to go-webauthn's User interface.
@@ -466,11 +483,15 @@ func createSession(ctx context.Context, q *store.Queries, accountID uuid.UUID, c
 		ttl = mobileSessionTTL
 	}
 	expires := time.Now().Add(ttl)
-	err = q.CreateSession(ctx, store.CreateSessionParams{
+	if err := q.CreateSession(ctx, store.CreateSessionParams{
 		ID: mustUUIDv7(), TokenHash: hash, AccountID: accountID, Client: string(client),
 		UserAgent: userAgentFrom(ctx), ExpiresAt: expires,
-	})
-	return Session{Token: token, ExpiresAt: expires, AccountID: accountID}, err
+	}); err != nil {
+		return Session{}, err
+	}
+	// Every sign-in, by any method, makes the device known to the account.
+	device, err := rememberDevice(ctx, q, accountID)
+	return Session{Token: token, ExpiresAt: expires, AccountID: accountID, DeviceToken: device}, err
 }
 
 // newToken returns a random 256-bit token for a session or an email link, and the hash

@@ -78,6 +78,7 @@ UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL;
 
 -- name: GetMe :one
 SELECT a.id AS account_id, a.email, a.email_verified_at, a.status,
+       (a.password_hash IS NOT NULL)::boolean AS has_password, a.password_changed_at,
        ac.id AS actor_id, ac.handle, ac.display_name,
        m.variants AS avatar_variants
 FROM accounts a

@@ -1,0 +1,6 @@
+{{template "layout_top" .}}<p style="margin:0 0 16px;font-size:16px;">Someone just entered your {{.InstanceName}} password on a device we don't recognize{{if .Detail}} (<strong>{{.Detail}}</strong>){{end}}. To finish signing in there, enter this code:</p>
+<p style="margin:0 0 24px;font-size:28px;font-family:Menlo,Consolas,monospace;letter-spacing:4px;font-weight:bold;">{{.Code}}</p>
+<p style="margin:0 0 16px;font-size:14px;color:#616161;">The code works once, for {{.ExpiresIn}}.</p>
+<p style="margin:0 0 16px;font-size:16px;"><strong>If this wasn't you</strong>, don't enter or share the code: someone knows your password. They can't sign in without the code. Change your password as soon as you can.</p>
+<p style="margin:24px 0;"><a href="{{.Link}}" style="display:inline-block;background:#2e7d6b;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:16px;">Change my password</a></p>
+{{template "layout_bottom" .}}

@@ -23,6 +23,8 @@ type emailProofRequest struct {
 	Token string `json:"token"`
 	Email string `json:"email"`
 	Code  string `json:"code"`
+	// Password optionally sets a password when finishing a sign-up.
+	Password string `json:"password"`
 	// Client is "web" (session cookie, the default) or "mobile" (token in the response).
 	Client string `json:"client"`
 }
@@ -47,7 +49,9 @@ func (s *Server) handleSignInLinkRequest(w http.ResponseWriter, r *http.Request)
 
 // handleSignInLinkFinish signs in with the link or code from a sign-in email.
 func (s *Server) handleSignInLinkFinish(w http.ResponseWriter, r *http.Request) {
-	s.finishWithEmail(w, r, http.StatusOK, s.auth.FinishEmailSignIn)
+	s.finishWithEmail(w, r, http.StatusOK, false, func(ctx context.Context, proof auth.EmailProof, _ string, client auth.Client) (auth.Session, error) {
+		return s.auth.FinishEmailSignIn(ctx, proof, client)
+	})
 }
 
 // handleEmailSignupRequest checks the sign-up details and emails a link and code that
@@ -66,11 +70,13 @@ func (s *Server) handleEmailSignupRequest(w http.ResponseWriter, r *http.Request
 
 // handleEmailSignupFinish creates the account with the link or code from a sign-up email.
 func (s *Server) handleEmailSignupFinish(w http.ResponseWriter, r *http.Request) {
-	s.finishWithEmail(w, r, http.StatusCreated, s.auth.FinishEmailSignup)
+	s.finishWithEmail(w, r, http.StatusCreated, true, s.auth.FinishEmailSignup)
 }
 
-func (s *Server) finishWithEmail(w http.ResponseWriter, r *http.Request, status int,
-	fn func(context.Context, auth.EmailProof, auth.Client) (auth.Session, error),
+// finishWithEmail decodes an emailProofRequest and runs fn. allowPassword says whether
+// the request may set a password.
+func (s *Server) finishWithEmail(w http.ResponseWriter, r *http.Request, status int, allowPassword bool,
+	fn func(context.Context, auth.EmailProof, string, auth.Client) (auth.Session, error),
 ) {
 	var req emailProofRequest
 	if !decodeJSON(w, r, &req) {
@@ -80,7 +86,11 @@ func (s *Server) finishWithEmail(w http.ResponseWriter, r *http.Request, status 
 	if !ok {
 		return
 	}
-	sess, err := fn(r.Context(), auth.EmailProof{Token: req.Token, Email: req.Email, Code: req.Code}, client)
+	if req.Password != "" && !allowPassword {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a password can't be set here")
+		return
+	}
+	sess, err := fn(r.Context(), auth.EmailProof{Token: req.Token, Email: req.Email, Code: req.Code}, req.Password, client)
 	if err != nil {
 		s.writeAuthError(w, r, err)
 		return

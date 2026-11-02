@@ -64,6 +64,7 @@ services:
       PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
       PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
       PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
+      PC_BREACHED_PASSWORD_CHECK: ${PC_BREACHED_PASSWORD_CHECK:-true}
     secrets: [db_password, s3_access_key, s3_secret_key]
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]

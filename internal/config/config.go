@@ -62,6 +62,10 @@ type Config struct {
 	TrustProxy bool
 	// RateLimits apply per client IP (THREAT_MODEL.md A8, D1, S1).
 	RateLimits RateLimits
+	// BreachedPasswordCheck refuses new passwords found in known data breaches, using
+	// the Have I Been Pwned range API: only the first 5 characters of the password's
+	// SHA-1 hash leave the server (PC_BREACHED_PASSWORD_CHECK, on by default).
+	BreachedPasswordCheck bool
 
 	// PublicURL is the address people use to reach the web app, for links in email.
 	PublicURL string
@@ -170,6 +174,14 @@ func DefaultRateLimits() RateLimits {
 // inspect`, crash reports and child processes.
 func Load(getenv func(string) string) (Config, error) {
 	var parseErrs []error
+	breachCheck := true
+	if v := getenv("PC_BREACHED_PASSWORD_CHECK"); v != "" {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			parseErrs = append(parseErrs, fmt.Errorf("PC_BREACHED_PASSWORD_CHECK must be true or false, got %q", v))
+		}
+		breachCheck = on
+	}
 	readSecret := func(name string) string {
 		v, err := secret(getenv, name)
 		if err != nil {
@@ -194,6 +206,7 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.WebAuthnOrigins = splitList(v)
 	}
 	cfg.RateLimits = DefaultRateLimits()
+	cfg.BreachedPasswordCheck = breachCheck
 	cfg.PublicURL = valueOr(getenv("PC_PUBLIC_URL"), publicURLDefault(cfg.Env, cfg.InstanceDomain))
 	cfg.Mail = mailDefaults(cfg.Env)
 	cfg.Mail.Host = valueOr(getenv("PC_SMTP_HOST"), cfg.Mail.Host)

@@ -32,7 +32,10 @@ type AuthService interface {
 	RequestSignInLink(ctx context.Context, email string) error
 	FinishEmailSignIn(ctx context.Context, proof auth.EmailProof, client auth.Client) (auth.Session, error)
 	RequestEmailSignup(ctx context.Context, in auth.SignupInput) error
-	FinishEmailSignup(ctx context.Context, proof auth.EmailProof, client auth.Client) (auth.Session, error)
+	FinishEmailSignup(ctx context.Context, proof auth.EmailProof, password string, client auth.Client) (auth.Session, error)
+	PasswordSignIn(ctx context.Context, email, password, code string, client auth.Client) (auth.Session, error)
+	SetPassword(ctx context.Context, p auth.Principal, password string) error
+	RemovePassword(ctx context.Context, p auth.Principal) error
 	VerifyEmail(ctx context.Context, token string) error
 	ResendVerification(ctx context.Context, accountID uuid.UUID) error
 
@@ -62,13 +65,36 @@ func (s *Server) sessionCookieName() string {
 	return "pc_session"
 }
 
+// deviceCookieName names the cookie that lets a browser be recognized at password
+// sign-in. It outlives sessions: signing out doesn't make the browser a new device.
+func (s *Server) deviceCookieName() string {
+	if s.cfg.Env == config.Production {
+		return "__Host-pc_device"
+	}
+	return "pc_device"
+}
+
+// deviceToken returns the device token the client presented: a header from the apps,
+// or a cookie from browsers.
+func (s *Server) deviceToken(r *http.Request) string {
+	if t := r.Header.Get("X-Device-Token"); t != "" {
+		return t
+	}
+	if c, err := r.Cookie(s.deviceCookieName()); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
 // authenticate attaches the signed-in principal to the request, from a bearer token
 // (mobile apps) or the session cookie (web). Requests without valid credentials
 // continue anonymously; handlers decide whether that's allowed.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Sessions started by this request record which browser or app they belong to.
-		r = r.WithContext(auth.WithUserAgent(r.Context(), r.UserAgent()))
+		// Sessions started by this request record which browser or app they belong to,
+		// and password sign-ins check whether the device is known.
+		ctx := auth.WithUserAgent(r.Context(), r.UserAgent())
+		r = r.WithContext(auth.WithDeviceToken(ctx, s.deviceToken(r)))
 
 		token, fromCookie := "", false
 		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
@@ -120,6 +146,9 @@ type accountJSON struct {
 	Email         string    `json:"email"`
 	EmailVerified bool      `json:"email_verified"`
 	Status        string    `json:"status"`
+	// HasPassword is whether a password is set; PasswordChangedAt is when.
+	HasPassword       bool       `json:"has_password"`
+	PasswordChangedAt *time.Time `json:"password_changed_at"`
 }
 
 type actorJSON struct {
@@ -134,6 +163,9 @@ type actorJSON struct {
 type sessionJSON struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// DeviceToken is new when the app didn't send one: it keeps it and sends it in the
+	// X-Device-Token header, so later password sign-ins recognize the device.
+	DeviceToken string `json:"device_token,omitempty"`
 }
 
 func (s *Server) handleSignupBegin(w http.ResponseWriter, r *http.Request) {
@@ -216,9 +248,12 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, status int
 
 	resp := s.toMeResponse(me)
 	if client == auth.ClientMobile {
-		resp.Session = &sessionJSON{Token: sess.Token, ExpiresAt: sess.ExpiresAt}
+		resp.Session = &sessionJSON{Token: sess.Token, ExpiresAt: sess.ExpiresAt, DeviceToken: sess.DeviceToken}
 	} else {
 		s.setSessionCookie(w, sess)
+		if sess.DeviceToken != "" {
+			s.setDeviceCookie(w, sess.DeviceToken)
+		}
 	}
 	writeJSON(w, status, resp)
 }
@@ -253,8 +288,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) toMeResponse(me store.GetMeRow) meResponse {
 	resp := meResponse{
-		Account: accountJSON{ID: me.AccountID, Email: me.Email, EmailVerified: me.EmailVerifiedAt != nil, Status: me.Status},
-		Actor:   actorJSON{ID: me.ActorID, Handle: me.Handle, DisplayName: me.DisplayName, Avatar: []media.PublicVariant{}},
+		Account: accountJSON{
+			ID: me.AccountID, Email: me.Email, EmailVerified: me.EmailVerifiedAt != nil, Status: me.Status,
+			HasPassword: me.HasPassword, PasswordChangedAt: me.PasswordChangedAt,
+		},
+		Actor: actorJSON{ID: me.ActorID, Handle: me.Handle, DisplayName: me.DisplayName, Avatar: []media.PublicVariant{}},
 	}
 	if s.media != nil && len(me.AvatarVariants) > 0 {
 		if variants, err := s.media.PublicVariants(me.AvatarVariants); err == nil {
@@ -274,6 +312,19 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, sess auth.Session) {
 		Value:    sess.Token,
 		Path:     "/",
 		Expires:  sess.ExpiresAt,
+		HttpOnly: true,
+		Secure:   s.cfg.Env == config.Production,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// setDeviceCookie stores a browser's device token for a year.
+func (s *Server) setDeviceCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is set in production; see setSessionCookie
+		Name:     s.deviceCookieName(),
+		Value:    token,
+		Path:     "/",
+		MaxAge:   365 * 24 * 60 * 60,
 		HttpOnly: true,
 		Secure:   s.cfg.Env == config.Production,
 		SameSite: http.SameSiteLaxMode,
@@ -313,6 +364,12 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusUnauthorized, "sign_in_failed", err.Error())
 	case errors.Is(err, auth.ErrLinkInvalid):
 		writeError(w, http.StatusBadRequest, "link_invalid", err.Error())
+	case errors.Is(err, auth.ErrPasswordLocked):
+		writeError(w, http.StatusTooManyRequests, "password_locked", err.Error())
+	case errors.Is(err, auth.ErrNewDeviceCode):
+		writeError(w, http.StatusUnauthorized, "email_code_required", err.Error())
+	case errors.Is(err, auth.ErrLastSignInMethod):
+		writeError(w, http.StatusConflict, "last_sign_in_method", err.Error())
 	case errors.Is(err, auth.ErrCodeInvalid):
 		writeError(w, http.StatusBadRequest, "code_invalid", auth.ErrCodeInvalid.Error())
 	case errors.Is(err, auth.ErrTooManyEmails):

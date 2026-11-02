@@ -1,0 +1,11 @@
+Hi {{.DisplayName}},
+
+Someone just entered your {{.InstanceName}} password on a device we don't recognize{{if .Detail}} ({{.Detail}}){{end}}. To finish signing in there, enter this code:
+
+{{.Code}}
+
+The code works once, for {{.ExpiresIn}}.
+
+If this wasn't you, don't enter or share the code: someone knows your password. They can't sign in without the code. Change your password as soon as you can:
+
+{{.Link}}

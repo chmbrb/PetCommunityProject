@@ -95,6 +95,35 @@ func TestNotices(t *testing.T) {
 	}
 }
 
+func TestPasswordEmails(t *testing.T) {
+	msg, err := NewDevice("sam@example.org", LinkEmail{
+		InstanceName: "Eastside Pets", DisplayName: "Sam", Link: "https://pets.example.org/settings",
+		ExpiresIn: "15 minutes", Code: "123456", Detail: "Firefox <on Linux>",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Text, "123456") || !strings.Contains(msg.Text, "If this wasn't you") {
+		t.Errorf("new-device email lacks the code or the warning:\n%s", msg.Text)
+	}
+	// The device description comes from the request's User-Agent header.
+	if strings.Contains(msg.HTML, "<on Linux>") {
+		t.Error("device description not escaped in HTML")
+	}
+	for _, detail := range []string{"added", "changed", "removed"} {
+		msg, err := PasswordChanged("sam@example.org", LinkEmail{InstanceName: "Eastside Pets", DisplayName: "Sam", Link: "https://x/settings", Detail: detail})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(msg.Subject, "password was "+detail) {
+			t.Errorf("subject %q", msg.Subject)
+		}
+		if signedOut := strings.Contains(msg.Text, "other devices were signed out"); signedOut == (detail == "removed") {
+			t.Errorf("%s notice: mentions signing out = %v", detail, signedOut)
+		}
+	}
+}
+
 func TestRecorder(t *testing.T) {
 	var r Recorder
 	_ = r.Send(t.Context(), Message{To: "a@example.org"})

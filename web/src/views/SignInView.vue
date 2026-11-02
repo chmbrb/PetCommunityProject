@@ -5,50 +5,84 @@ import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError, requestSignInLink } from '../api/client'
 import EmailCodeForm from '../components/EmailCodeForm.vue'
+import PasswordField from '../components/PasswordField.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
 const router = useRouter()
-const { signIn, signInWithEmail } = useSession()
+const { signIn, signInWithEmail, signInWithPassword } = useSession()
 
 const supported = browserSupportsWebAuthn()
+const passkeyError = ref<string | null>(null)
+const passkeyBusy = ref(false)
+
+const email = ref('')
+const password = ref('')
 const error = ref<string | null>(null)
-const busy = ref(false)
+const busy = ref<'password' | 'email' | null>(null)
+// After asking for an email: 'sign-in' for a sign-in code, 'new-device' for the code
+// that confirms a password sign-in on this device.
+const codeFor = ref<'sign-in' | 'new-device' | null>(null)
 
-const linkEmail = ref('')
-const linkError = ref<string | null>(null)
-const linkSent = ref(false)
-const linkBusy = ref(false)
-
-async function sendLink() {
-  linkError.value = null
-  linkBusy.value = true
-  try {
-    await requestSignInLink(linkEmail.value)
-    linkSent.value = true
-  } catch (err) {
-    linkError.value = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
-  } finally {
-    linkBusy.value = false
-  }
+function describe(err: unknown) {
+  return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
 }
 
-async function confirmCode(code: string) {
-  await signInWithEmail({ email: linkEmail.value, code })
-  await router.push({ name: 'home' })
-}
-
-async function submit() {
-  error.value = null
-  busy.value = true
+async function withPasskey() {
+  passkeyError.value = null
+  passkeyBusy.value = true
   try {
     await signIn()
     await router.push({ name: 'home' })
   } catch (err) {
-    error.value = describePasskeyError(err)
+    passkeyError.value = describePasskeyError(err)
   } finally {
-    busy.value = false
+    passkeyBusy.value = false
   }
+}
+
+async function withPassword() {
+  error.value = null
+  busy.value = 'password'
+  try {
+    await signInWithPassword(email.value, password.value)
+    await router.push({ name: 'home' })
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'email_code_required') {
+      codeFor.value = 'new-device'
+    } else {
+      error.value = describe(err)
+    }
+  } finally {
+    busy.value = null
+  }
+}
+
+async function sendCode() {
+  error.value = null
+  busy.value = 'email'
+  try {
+    await requestSignInLink(email.value)
+    codeFor.value = 'sign-in'
+  } catch (err) {
+    error.value = describe(err)
+  } finally {
+    busy.value = null
+  }
+}
+
+async function confirmCode(code: string) {
+  if (codeFor.value === 'new-device') {
+    await signInWithPassword(email.value, password.value, code)
+  } else {
+    await signInWithEmail({ email: email.value, code })
+  }
+  await router.push({ name: 'home' })
+}
+
+function startOver() {
+  codeFor.value = null
+  password.value = ''
 }
 </script>
 
@@ -57,49 +91,25 @@ async function submit() {
     class="py-8"
     max-width="480"
   >
-    <h1 class="text-h4 mb-2">
+    <h1 class="text-h4 mb-6">
       Sign in
     </h1>
 
-    <template v-if="supported">
-      <p class="text-body-1 mb-6">
-        Use a passkey you created for this site, or get a sign-in email.
+    <template v-if="codeFor">
+      <p
+        v-if="codeFor === 'new-device'"
+        class="text-body-1 mb-4"
+      >
+        This device is new to your account, so we've emailed a code to
+        <strong>{{ email }}</strong> to confirm it's you. Enter it here. It works once, for 15
+        minutes.
       </p>
-
-      <v-alert
-        v-if="error"
-        type="error"
-        variant="tonal"
-        class="mb-4"
+      <p
+        v-else
+        class="text-body-1 mb-4"
       >
-        {{ error }}
-      </v-alert>
-
-      <v-btn
-        color="primary"
-        size="large"
-        block
-        :loading="busy"
-        :disabled="!supported"
-        @click="submit"
-      >
-        Sign in with a passkey
-      </v-btn>
-
-      <div class="d-flex align-center ga-3 my-8">
-        <v-divider />
-        <span class="text-body-2 text-medium-emphasis">or</span>
-        <v-divider />
-      </div>
-    </template>
-
-    <h2 class="text-h6 mb-2">
-      Get a sign-in email
-    </h2>
-    <template v-if="linkSent">
-      <p class="text-body-1 mb-4">
-        If an account uses <strong>{{ linkEmail }}</strong>, we've sent it a sign-in link and
-        code. Open the link, or enter the code here. Both work once, for 15 minutes.
+        If an account uses <strong>{{ email }}</strong>, we've sent it a sign-in link and code.
+        Open the link, or enter the code here. Both work once, for 15 minutes.
       </p>
       <EmailCodeForm
         :submit="confirmCode"
@@ -109,33 +119,86 @@ async function submit() {
         No email? Check your spam folder, or
         <a
           href="#"
-          @click.prevent="linkSent = false"
-        >send another</a>.
+          @click.prevent="startOver"
+        >start again</a>.
       </p>
     </template>
-    <v-form
-      v-else
-      @submit.prevent="sendLink"
-    >
-      <v-text-field
-        v-model="linkEmail"
-        label="Email"
-        type="email"
-        autocomplete="email"
-        :error-messages="linkError ?? undefined"
-        :disabled="linkBusy"
-        required
-      />
-      <v-btn
-        type="submit"
-        variant="outlined"
-        size="large"
-        block
-        :loading="linkBusy"
-      >
-        Email me a sign-in link and code
-      </v-btn>
-    </v-form>
+
+    <template v-else>
+      <template v-if="supported">
+        <v-alert
+          v-if="passkeyError"
+          type="error"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ passkeyError }}
+        </v-alert>
+        <v-btn
+          color="primary"
+          size="large"
+          block
+          :loading="passkeyBusy"
+          @click="withPasskey"
+        >
+          Sign in with a passkey
+        </v-btn>
+
+        <div class="d-flex align-center ga-3 my-8">
+          <v-divider />
+          <span class="text-body-2 text-medium-emphasis">or</span>
+          <v-divider />
+        </div>
+      </template>
+
+      <v-form @submit.prevent="password ? withPassword() : sendCode()">
+        <v-text-field
+          v-model="email"
+          label="Email"
+          type="email"
+          autocomplete="username"
+          :disabled="busy !== null"
+          required
+        />
+        <PasswordField
+          v-model="password"
+          autocomplete="current-password"
+          label="Password (if you've set one)"
+          :disabled="busy !== null"
+        />
+        <v-alert
+          v-if="error"
+          type="error"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ error }}
+        </v-alert>
+        <v-btn
+          type="submit"
+          :color="supported ? undefined : 'primary'"
+          :variant="supported ? 'outlined' : 'elevated'"
+          size="large"
+          block
+          class="mb-3"
+          :loading="busy === 'password'"
+          :disabled="busy !== null || !password"
+          @click.prevent="withPassword"
+        >
+          Sign in with password
+        </v-btn>
+        <v-btn
+          variant="text"
+          size="large"
+          block
+          :loading="busy === 'email'"
+          :disabled="busy !== null"
+          @click="sendCode"
+        >
+          Email me a sign-in code instead
+        </v-btn>
+      </v-form>
+    </template>
 
     <p class="text-body-2 mt-6">
       New here?
