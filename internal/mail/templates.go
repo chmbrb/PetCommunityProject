@@ -25,6 +25,9 @@ type LinkEmail struct {
 	Link         string
 	// ExpiresIn describes how long the link works, e.g. "15 minutes".
 	ExpiresIn string
+	// Code is the 6-digit code that can be entered instead of opening the link, for
+	// emails that have one.
+	Code string
 	// Detail is extra context for notices, e.g. the passkey's name.
 	Detail string
 }
@@ -36,7 +39,12 @@ func VerifyEmail(to string, data LinkEmail) (Message, error) {
 
 // SignInLink sends a one-time sign-in link.
 func SignInLink(to string, data LinkEmail) (Message, error) {
-	return render(to, "Your sign-in link for "+data.InstanceName, "sign_in_link", data)
+	return render(to, "Your sign-in link and code for "+data.InstanceName, "sign_in_link", data)
+}
+
+// SignUp asks a new person to confirm their address, which creates their account.
+func SignUp(to string, data LinkEmail) (Message, error) {
+	return render(to, "Confirm your email to join "+data.InstanceName, "sign_up", data)
 }
 
 // PasskeyAdded tells the person a passkey was added, in case it wasn't them.

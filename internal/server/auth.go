@@ -30,7 +30,9 @@ type AuthService interface {
 	Me(ctx context.Context, accountID uuid.UUID) (store.GetMeRow, error)
 
 	RequestSignInLink(ctx context.Context, email string) error
-	FinishSignInLink(ctx context.Context, token string, client auth.Client) (auth.Session, error)
+	FinishEmailSignIn(ctx context.Context, proof auth.EmailProof, client auth.Client) (auth.Session, error)
+	RequestEmailSignup(ctx context.Context, in auth.SignupInput) error
+	FinishEmailSignup(ctx context.Context, proof auth.EmailProof, client auth.Client) (auth.Session, error)
 	VerifyEmail(ctx context.Context, token string) error
 	ResendVerification(ctx context.Context, accountID uuid.UUID) error
 
@@ -311,6 +313,8 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusUnauthorized, "sign_in_failed", err.Error())
 	case errors.Is(err, auth.ErrLinkInvalid):
 		writeError(w, http.StatusBadRequest, "link_invalid", err.Error())
+	case errors.Is(err, auth.ErrCodeInvalid):
+		writeError(w, http.StatusBadRequest, "code_invalid", auth.ErrCodeInvalid.Error())
 	case errors.Is(err, auth.ErrTooManyEmails):
 		writeError(w, http.StatusTooManyRequests, "too_many_emails", err.Error())
 	case errors.Is(err, auth.ErrReauthRequired):

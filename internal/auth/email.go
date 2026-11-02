@@ -4,9 +4,13 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/mail"
 	"strings"
 	"time"
@@ -22,11 +26,12 @@ import (
 	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
-// Email purposes. The first two carry a one-time link (matching email_tokens.purpose);
-// the others are security notices.
+// Email purposes. The first three carry a one-time link (matching
+// email_tokens.purpose); the others are security notices.
 const (
 	PurposeVerifyEmail    = "verify_email"
 	PurposeSignIn         = "sign_in"
+	PurposeSignUp         = "sign_up"
 	PurposePasskeyAdded   = "passkey_added"
 	PurposePasskeyRemoved = "passkey_removed"
 )
@@ -39,12 +44,30 @@ const (
 	// Short, because a sign-in link is as good as a password while it lasts
 	// (THREAT_MODEL.md S6).
 	signInLinkTTL = 15 * time.Minute
+	// Longer, because it's the first email a new person gets from the instance, and
+	// it only creates an account for the address it was sent to.
+	signUpTTL = time.Hour
+	// maxCodeAttempts is how many wrong codes an email allows before its code (and
+	// link) stop working. With 6 digits, that leaves a 1 in 200,000 chance of guessing.
+	maxCodeAttempts = 5
 )
 
 var (
 	ErrLinkInvalid   = errors.New("this link is invalid, has expired, or was already used")
+	ErrCodeInvalid   = errors.New("that code is wrong or has expired; check you entered the code from the latest email, or request a new one")
 	ErrTooManyEmails = errors.New("too many emails were sent to this address; please try again later")
+
+	// errWrongCode is a well-formed code that didn't match, which counts as an attempt.
+	errWrongCode = fmt.Errorf("wrong code: %w", ErrCodeInvalid)
 )
+
+// EmailProof is what a person brings back from a sign-in or sign-up email: the
+// link's token, or the address the email went to and the 6-digit code in it.
+type EmailProof struct {
+	Token string
+	Email string
+	Code  string
+}
 
 // JobQueue inserts background jobs. *river.Client satisfies it.
 type JobQueue interface {
@@ -54,10 +77,13 @@ type JobQueue interface {
 // EmailJob asks the worker to send an account email. It deliberately holds no token:
 // the worker creates the token when it sends, so tokens never sit in the job table.
 type EmailJob struct {
+	// AccountID is the recipient; unset for sign-up, which has no account yet.
 	AccountID uuid.UUID `json:"account_id"`
 	Purpose   string    `json:"purpose"`
 	// Detail is shown in notices, e.g. the passkey's name.
 	Detail string `json:"detail,omitempty"`
+	// Signup holds the details entered at sign-up, and the address to send to.
+	Signup *SignupInput `json:"signup,omitempty"`
 }
 
 // Kind identifies the job type to River.
@@ -67,7 +93,7 @@ func (EmailJob) Kind() string { return "email" }
 // few minutes, so it's retried briefly; a verification email can wait longer.
 func (j EmailJob) InsertOpts() river.InsertOpts {
 	attempts := 10
-	if j.Purpose == PurposeSignIn {
+	if j.Purpose == PurposeSignIn || j.Purpose == PurposeSignUp {
 		attempts = 3
 	}
 	return river.InsertOpts{Queue: QueueEmail, MaxAttempts: attempts}
@@ -97,23 +123,12 @@ func (s *Service) RequestSignInLink(ctx context.Context, email string) error {
 	return s.enqueueEmail(ctx, EmailJob{AccountID: acct.ID, Purpose: PurposeSignIn})
 }
 
-// FinishSignInLink signs in with a token from a sign-in email. Using the link also
-// proves the person controls the address, so it verifies the email.
-func (s *Service) FinishSignInLink(ctx context.Context, token string, client Client) (Session, error) {
-	hash, ok := hashToken(token)
-	if !ok {
-		return Session{}, ErrLinkInvalid
-	}
+// FinishEmailSignIn signs in with the link or code from a sign-in email. Using it
+// also proves the person controls the address, so it verifies the email.
+func (s *Service) FinishEmailSignIn(ctx context.Context, proof EmailProof, client Client) (Session, error) {
 	var issued Session
-	err := s.db.InTx(ctx, func(_ pgx.Tx, q *store.Queries) error {
-		row, err := q.ConsumeEmailToken(ctx, store.ConsumeEmailTokenParams{TokenHash: hash, Purpose: PurposeSignIn})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrLinkInvalid
-		}
-		if err != nil {
-			return err
-		}
-		acct, err := q.GetAccountForEmail(ctx, row.AccountID)
+	err := s.withEmailProof(ctx, proof, PurposeSignIn, func(_ pgx.Tx, q *store.Queries, row emailToken) error {
+		acct, err := q.GetAccountForEmail(ctx, row.AccountID.UUID)
 		if err != nil {
 			return err
 		}
@@ -135,6 +150,136 @@ func (s *Service) FinishSignInLink(ctx context.Context, token string, client Cli
 	return issued, err
 }
 
+// RequestEmailSignup checks the details and emails a link and code that create the
+// account. Nothing is created until one is used, so nobody can sign up an address
+// they don't control, and abandoned sign-ups leave no account behind.
+func (s *Service) RequestEmailSignup(ctx context.Context, in SignupInput) error {
+	in, err := s.checkSignup(ctx, in)
+	if err != nil {
+		return err
+	}
+	if ok, _ := s.emailLimiter.Allow(in.Email); !ok {
+		return ErrTooManyEmails
+	}
+	return s.enqueueEmail(ctx, EmailJob{Purpose: PurposeSignUp, Signup: &in})
+}
+
+// FinishEmailSignup creates the account from a sign-up email's link or code, with its
+// address already verified, and starts a session.
+func (s *Service) FinishEmailSignup(ctx context.Context, proof EmailProof, client Client) (Session, error) {
+	var issued Session
+	err := s.withEmailProof(ctx, proof, PurposeSignUp, func(tx pgx.Tx, q *store.Queries, row emailToken) error {
+		var in SignupInput
+		if err := json.Unmarshal(row.Signup, &in); err != nil {
+			return err
+		}
+		accountID, err := s.createAccount(ctx, tx, q, in)
+		if err != nil {
+			return err
+		}
+		if _, err := q.MarkEmailVerified(ctx, store.MarkEmailVerifiedParams{ID: accountID, Email: in.Email}); err != nil {
+			return err
+		}
+		issued, err = createSession(ctx, q, accountID, client)
+		return err
+	})
+	if err != nil {
+		return Session{}, mapUniqueViolation(err)
+	}
+	s.logger.InfoContext(ctx, "account created", "account_id", issued.AccountID, "method", "email")
+	return issued, nil
+}
+
+// emailToken is a used-up email token.
+type emailToken struct {
+	AccountID uuid.NullUUID
+	Email     string
+	Signup    []byte
+}
+
+// withEmailProof uses up the token or code in proof and runs fn in the same
+// transaction, so the token stays unused if fn fails. A wrong code is recorded
+// afterwards, outside the transaction, so the failed attempt still counts.
+func (s *Service) withEmailProof(ctx context.Context, proof EmailProof, purpose string, fn func(pgx.Tx, *store.Queries, emailToken) error) error {
+	email, codeHash, useCode := codeProof(proof)
+	err := s.db.InTx(ctx, func(tx pgx.Tx, q *store.Queries) error {
+		var row emailToken
+		switch {
+		case proof.Token != "":
+			hash, ok := hashToken(proof.Token)
+			if !ok {
+				return ErrLinkInvalid
+			}
+			r, err := q.ConsumeEmailToken(ctx, store.ConsumeEmailTokenParams{TokenHash: hash, Purpose: purpose})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrLinkInvalid
+			}
+			if err != nil {
+				return err
+			}
+			row = emailToken(r)
+		case useCode:
+			r, err := q.ConsumeEmailCode(ctx, store.ConsumeEmailCodeParams{
+				Email: email, Purpose: purpose, CodeHash: codeHash, MaxAttempts: maxCodeAttempts,
+			})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return errWrongCode
+			}
+			if err != nil {
+				return err
+			}
+			row = emailToken(r)
+		default:
+			return ErrCodeInvalid
+		}
+		return fn(tx, q, row)
+	})
+	if errors.Is(err, errWrongCode) {
+		if ferr := s.db.RecordEmailCodeFailure(ctx, store.RecordEmailCodeFailureParams{
+			Email: email, Purpose: purpose, MaxAttempts: maxCodeAttempts,
+		}); ferr != nil {
+			return ferr
+		}
+		return ErrCodeInvalid
+	}
+	return err
+}
+
+// codeProof returns the normalized address and code hash from proof, and whether
+// they're well formed. Spaces and dashes in the code are ignored, since people copy
+// it in pieces or as it's shown ("123 456").
+func codeProof(proof EmailProof) (email string, codeHash []byte, ok bool) {
+	email = strings.ToLower(strings.TrimSpace(proof.Email))
+	code := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '-' {
+			return -1
+		}
+		return r
+	}, proof.Code)
+	if email == "" || len(code) != 6 || strings.Trim(code, "0123456789") != "" {
+		return "", nil, false
+	}
+	return email, hashCode(code), true
+}
+
+// newCode returns a random 6-digit code for an email, and the hash stored in its place.
+func newCode() (string, []byte, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", nil, err
+	}
+	code := fmt.Sprintf("%06d", n.Int64())
+	return code, hashCode(code), nil
+}
+
+// hashCode keeps codes out of the database in plain text. A 6-digit code's hash can be
+// reversed by trying every code, so what protects a code is its short life and the
+// attempt limit, not the hash.
+func hashCode(code string) []byte {
+	sum := sha256.Sum256([]byte("email-code:" + code))
+	return sum[:]
+}
+
 // VerifyEmail confirms an address with a token from a verification email. It works
 // without being signed in, since the link may open in a different browser.
 func (s *Service) VerifyEmail(ctx context.Context, token string) error {
@@ -150,7 +295,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		if err != nil {
 			return err
 		}
-		acct, err := q.GetAccountForEmail(ctx, row.AccountID)
+		acct, err := q.GetAccountForEmail(ctx, row.AccountID.UUID)
 		if err != nil {
 			return err
 		}
@@ -209,6 +354,9 @@ func NewEmailer(cfg config.Config, db *database.Store, sender pcmail.Sender, log
 // Send issues a fresh token and emails the link. Returning an error makes the job
 // retry; each attempt issues a new token, and unused ones simply expire.
 func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
+	if job.Purpose == PurposeSignUp {
+		return e.sendSignup(ctx, job)
+	}
 	acct, err := e.db.GetAccountForEmail(ctx, job.AccountID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil // account deleted since the job was queued
@@ -227,6 +375,7 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 
 	var ttl time.Duration
 	var path, expiresIn string
+	var withCode bool
 	var render func(string, pcmail.LinkEmail) (pcmail.Message, error)
 	switch job.Purpose {
 	case PurposeVerifyEmail:
@@ -236,29 +385,20 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 		ttl, path, expiresIn, render = verifyEmailTTL, "/verify-email", "24 hours", pcmail.VerifyEmail
 	case PurposeSignIn:
 		ttl, path, expiresIn, render = signInLinkTTL, "/signin/email", "15 minutes", pcmail.SignInLink
+		withCode = true
 	default:
 		return river.JobCancel(fmt.Errorf("unknown email purpose %q", job.Purpose))
 	}
 
-	token, hash, err := newToken()
+	data, err := e.issue(ctx, store.CreateEmailTokenParams{
+		AccountID: uuid.NullUUID{UUID: acct.ID, Valid: true}, Purpose: job.Purpose,
+		Email: acct.Email, ExpiresAt: time.Now().Add(ttl),
+	}, path, withCode)
 	if err != nil {
 		return err
 	}
-	if err := e.db.CreateEmailToken(ctx, store.CreateEmailTokenParams{
-		ID: mustUUIDv7(), TokenHash: hash, AccountID: acct.ID, Purpose: job.Purpose,
-		Email: acct.Email, ExpiresAt: time.Now().Add(ttl),
-	}); err != nil {
-		return err
-	}
-
-	// The token goes in the URL fragment, which browsers never send to the server,
-	// so it can't end up in proxy or server logs.
-	msg, err := render(acct.Email, pcmail.LinkEmail{
-		InstanceName: e.instanceName,
-		DisplayName:  acct.DisplayName,
-		Link:         e.publicURL + path + "#token=" + token,
-		ExpiresIn:    expiresIn,
-	})
+	data.DisplayName, data.ExpiresIn = acct.DisplayName, expiresIn
+	msg, err := render(acct.Email, data)
 	if err != nil {
 		return river.JobCancel(err)
 	}
@@ -267,6 +407,60 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 	}
 	e.logger.InfoContext(ctx, "email sent", "purpose", job.Purpose, "account_id", acct.ID)
 	return nil
+}
+
+// sendSignup emails the link and code that create a new account.
+func (e *Emailer) sendSignup(ctx context.Context, job EmailJob) error {
+	if job.Signup == nil {
+		return river.JobCancel(errors.New("sign-up email without sign-up details"))
+	}
+	in := *job.Signup
+	details, err := json.Marshal(in)
+	if err != nil {
+		return river.JobCancel(err)
+	}
+	data, err := e.issue(ctx, store.CreateEmailTokenParams{
+		Purpose: PurposeSignUp, Email: in.Email, Signup: details, ExpiresAt: time.Now().Add(signUpTTL),
+	}, "/signup/email", true)
+	if err != nil {
+		return err
+	}
+	data.DisplayName, data.ExpiresIn = in.DisplayName, "1 hour"
+	msg, err := pcmail.SignUp(in.Email, data)
+	if err != nil {
+		return river.JobCancel(err)
+	}
+	if err := e.sender.Send(ctx, msg); err != nil {
+		return err
+	}
+	e.logger.InfoContext(ctx, "email sent", "purpose", job.Purpose)
+	return nil
+}
+
+// issue stores a new token (and code, if withCode) described by params, and returns
+// the email content for them: the link to path, and the code.
+func (e *Emailer) issue(ctx context.Context, params store.CreateEmailTokenParams, path string, withCode bool) (pcmail.LinkEmail, error) {
+	token, hash, err := newToken()
+	if err != nil {
+		return pcmail.LinkEmail{}, err
+	}
+	var code string
+	if withCode {
+		if code, params.CodeHash, err = newCode(); err != nil {
+			return pcmail.LinkEmail{}, err
+		}
+	}
+	params.ID, params.TokenHash = mustUUIDv7(), hash
+	if err := e.db.CreateEmailToken(ctx, params); err != nil {
+		return pcmail.LinkEmail{}, err
+	}
+	// The token goes in the URL fragment, which browsers never send to the server,
+	// so it can't end up in proxy or server logs.
+	return pcmail.LinkEmail{
+		InstanceName: e.instanceName,
+		Link:         e.publicURL + path + "#token=" + token,
+		Code:         code,
+	}, nil
 }
 
 // sendNotice emails a security notice that links to the account settings.

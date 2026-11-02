@@ -148,26 +148,76 @@ type pendingSignup struct {
 	Input      SignupInput `json:"input"`
 }
 
-// BeginSignup validates the details and returns passkey creation options.
-func (s *Service) BeginSignup(ctx context.Context, in SignupInput) (uuid.UUID, *protocol.PublicKeyCredentialCreationOptions, error) {
+// checkSignup normalizes and validates sign-up details, and checks that registration
+// is open and the email and handle are free.
+func (s *Service) checkSignup(ctx context.Context, in SignupInput) (SignupInput, error) {
 	in, err := in.Normalize()
 	if err != nil {
-		return uuid.Nil, nil, err
+		return in, err
 	}
 	if open, err := s.db.FeatureFlagEnabled(ctx, "open_registration"); err != nil {
-		return uuid.Nil, nil, err
+		return in, err
 	} else if !open {
-		return uuid.Nil, nil, ErrRegistrationClosed
+		return in, ErrRegistrationClosed
 	}
 	if taken, err := s.db.EmailExists(ctx, in.Email); err != nil {
-		return uuid.Nil, nil, err
+		return in, err
 	} else if taken {
-		return uuid.Nil, nil, ErrEmailTaken
+		return in, ErrEmailTaken
 	}
 	if taken, err := s.db.HandleExists(ctx, in.Handle); err != nil {
-		return uuid.Nil, nil, err
+		return in, err
 	} else if taken {
-		return uuid.Nil, nil, ErrHandleTaken
+		return in, ErrHandleTaken
+	}
+	return in, nil
+}
+
+// createAccount creates an account and its person actor, and queues the actor's
+// signing keys. It checks again that registration is open, since the details were
+// checked in an earlier request.
+func (s *Service) createAccount(ctx context.Context, tx pgx.Tx, q *store.Queries, in SignupInput) (uuid.UUID, error) {
+	return s.createAccountWithHandle(ctx, tx, q, in, mustUUIDv7(), nil)
+}
+
+// createAccountWithHandle is createAccount with a chosen account ID and WebAuthn user
+// handle, which passkey sign-up fixes before the passkey is created. A nil handle
+// gets a random one.
+func (s *Service) createAccountWithHandle(ctx context.Context, tx pgx.Tx, q *store.Queries, in SignupInput, accountID uuid.UUID, userHandle []byte) (uuid.UUID, error) {
+	if open, err := q.FeatureFlagEnabled(ctx, "open_registration"); err != nil {
+		return uuid.Nil, err
+	} else if !open {
+		return uuid.Nil, ErrRegistrationClosed
+	}
+	if userHandle == nil {
+		userHandle = make([]byte, 64)
+		if _, err := rand.Read(userHandle); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	if err := q.CreateAccount(ctx, store.CreateAccountParams{
+		ID: accountID, Email: in.Email, WebauthnUserHandle: userHandle,
+	}); err != nil {
+		return uuid.Nil, err
+	}
+	actorID := mustUUIDv7()
+	if err := q.CreatePersonActor(ctx, store.CreatePersonActorParams{
+		ID: actorID, Handle: in.Handle, DisplayName: in.DisplayName, AccountID: uuid.NullUUID{UUID: accountID, Valid: true},
+	}); err != nil {
+		return uuid.Nil, err
+	}
+	// The worker creates the actor's signing keys; it holds the secret that encrypts them.
+	if _, err := s.queue.InsertTx(ctx, tx, actorkeys.Job{ActorID: actorID}, nil); err != nil {
+		return uuid.Nil, fmt.Errorf("queue actor keys: %w", err)
+	}
+	return accountID, nil
+}
+
+// BeginSignup validates the details and returns passkey creation options.
+func (s *Service) BeginSignup(ctx context.Context, in SignupInput) (uuid.UUID, *protocol.PublicKeyCredentialCreationOptions, error) {
+	in, err := s.checkSignup(ctx, in)
+	if err != nil {
+		return uuid.Nil, nil, err
 	}
 
 	pending := pendingSignup{AccountID: mustUUIDv7(), UserHandle: make([]byte, 64), Input: in}
@@ -220,26 +270,8 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 
 	var issued Session
 	err = s.db.InTx(ctx, func(tx pgx.Tx, q *store.Queries) error {
-		if open, err := q.FeatureFlagEnabled(ctx, "open_registration"); err != nil {
+		if _, err := s.createAccountWithHandle(ctx, tx, q, pending.Input, pending.AccountID, pending.UserHandle); err != nil {
 			return err
-		} else if !open {
-			return ErrRegistrationClosed
-		}
-		in := pending.Input
-		if err := q.CreateAccount(ctx, store.CreateAccountParams{
-			ID: pending.AccountID, Email: in.Email, WebauthnUserHandle: pending.UserHandle,
-		}); err != nil {
-			return err
-		}
-		actorID := mustUUIDv7()
-		if err := q.CreatePersonActor(ctx, store.CreatePersonActorParams{
-			ID: actorID, Handle: in.Handle, DisplayName: in.DisplayName, AccountID: uuid.NullUUID{UUID: pending.AccountID, Valid: true},
-		}); err != nil {
-			return err
-		}
-		// The worker creates the actor's signing keys; it holds the secret that encrypts them.
-		if _, err := s.queue.InsertTx(ctx, tx, actorkeys.Job{ActorID: actorID}, nil); err != nil {
-			return fmt.Errorf("queue actor keys: %w", err)
 		}
 		identityID := mustUUIDv7()
 		if err := q.CreateAuthIdentity(ctx, store.CreateAuthIdentityParams{
@@ -262,7 +294,7 @@ func (s *Service) FinishSignup(ctx context.Context, challengeID uuid.UUID, crede
 	if err != nil {
 		return Session{}, mapUniqueViolation(err)
 	}
-	s.logger.InfoContext(ctx, "account created", "account_id", issued.AccountID)
+	s.logger.InfoContext(ctx, "account created", "account_id", issued.AccountID, "method", "passkey")
 	return issued, nil
 }
 

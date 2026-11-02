@@ -4,11 +4,12 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError, requestSignInLink } from '../api/client'
+import EmailCodeForm from '../components/EmailCodeForm.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
 const router = useRouter()
-const { signIn } = useSession()
+const { signIn, signInWithEmail } = useSession()
 
 const supported = browserSupportsWebAuthn()
 const error = ref<string | null>(null)
@@ -30,6 +31,11 @@ async function sendLink() {
   } finally {
     linkBusy.value = false
   }
+}
+
+async function confirmCode(code: string) {
+  await signInWithEmail({ email: linkEmail.value, code })
+  await router.push({ name: 'home' })
 }
 
 async function submit() {
@@ -54,56 +60,59 @@ async function submit() {
     <h1 class="text-h4 mb-2">
       Sign in
     </h1>
-    <p class="text-body-1 mb-6">
-      Use the passkey you created for this site.
-    </p>
 
-    <v-alert
-      v-if="!supported"
-      type="warning"
-      variant="tonal"
-      class="mb-4"
-    >
-      This browser doesn't support passkeys. Please use an up-to-date browser.
-    </v-alert>
+    <template v-if="supported">
+      <p class="text-body-1 mb-6">
+        Use a passkey you created for this site, or get a sign-in email.
+      </p>
 
-    <v-alert
-      v-if="error"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-    >
-      {{ error }}
-    </v-alert>
+      <v-alert
+        v-if="error"
+        type="error"
+        variant="tonal"
+        class="mb-4"
+      >
+        {{ error }}
+      </v-alert>
 
-    <v-btn
-      color="primary"
-      size="large"
-      block
-      :loading="busy"
-      :disabled="!supported"
-      @click="submit"
-    >
-      Sign in with a passkey
-    </v-btn>
+      <v-btn
+        color="primary"
+        size="large"
+        block
+        :loading="busy"
+        :disabled="!supported"
+        @click="submit"
+      >
+        Sign in with a passkey
+      </v-btn>
 
-    <div class="d-flex align-center ga-3 my-8">
-      <v-divider />
-      <span class="text-body-2 text-medium-emphasis">or</span>
-      <v-divider />
-    </div>
+      <div class="d-flex align-center ga-3 my-8">
+        <v-divider />
+        <span class="text-body-2 text-medium-emphasis">or</span>
+        <v-divider />
+      </div>
+    </template>
 
     <h2 class="text-h6 mb-2">
-      Get a sign-in link by email
+      Get a sign-in email
     </h2>
-    <v-alert
-      v-if="linkSent"
-      type="info"
-      variant="tonal"
-    >
-      If an account uses {{ linkEmail }}, we've sent it a sign-in link. The link works once,
-      for 15 minutes.
-    </v-alert>
+    <template v-if="linkSent">
+      <p class="text-body-1 mb-4">
+        If an account uses <strong>{{ linkEmail }}</strong>, we've sent it a sign-in link and
+        code. Open the link, or enter the code here. Both work once, for 15 minutes.
+      </p>
+      <EmailCodeForm
+        :submit="confirmCode"
+        label="Sign in"
+      />
+      <p class="text-body-2 mt-4">
+        No email? Check your spam folder, or
+        <a
+          href="#"
+          @click.prevent="linkSent = false"
+        >send another</a>.
+      </p>
+    </template>
     <v-form
       v-else
       @submit.prevent="sendLink"
@@ -124,7 +133,7 @@ async function submit() {
         block
         :loading="linkBusy"
       >
-        Email me a sign-in link
+        Email me a sign-in link and code
       </v-btn>
     </v-form>
 

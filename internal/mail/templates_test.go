@@ -15,7 +15,7 @@ func TestTemplates(t *testing.T) {
 		ExpiresIn:    "15 minutes",
 	}
 	for name, render := range map[string]func(string, LinkEmail) (Message, error){
-		"verify": VerifyEmail, "sign-in": SignInLink,
+		"verify": VerifyEmail, "sign-in": SignInLink, "sign-up": SignUp,
 	} {
 		t.Run(name, func(t *testing.T) {
 			msg, err := render("sam@example.org", data)
@@ -41,6 +41,30 @@ func TestTemplates(t *testing.T) {
 				t.Errorf("HTML part doesn't start with the layout: %.40q", msg.HTML)
 			}
 		})
+	}
+}
+
+func TestCodes(t *testing.T) {
+	data := LinkEmail{InstanceName: "Eastside Pets", DisplayName: "Sam", Link: "https://x/#token=a", ExpiresIn: "15 minutes", Code: "042917"}
+	for name, render := range map[string]func(string, LinkEmail) (Message, error){
+		"sign-in": SignInLink, "sign-up": SignUp,
+	} {
+		msg, err := render("sam@example.org", data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(msg.Text, "042917") || !strings.Contains(msg.HTML, "042917") {
+			t.Errorf("%s email lacks the code", name)
+		}
+	}
+	// Sign-in emails without a code (none are sent today) don't mention one.
+	data.Code = ""
+	msg, err := SignInLink("sam@example.org", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(msg.Text, "code") {
+		t.Errorf("sign-in email without a code mentions one:\n%s", msg.Text)
 	}
 }
 

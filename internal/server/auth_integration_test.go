@@ -161,6 +161,12 @@ func (e *authTestEnv) signUp(c *http.Client, handle string) *passkey {
 	if status != http.StatusOK {
 		e.t.Fatalf("signup begin: status %d, body %v", status, begin)
 	}
+	return e.finishPasskeySignup(c, begin)
+}
+
+// finishPasskeySignup creates a passkey for a started sign-up and finishes it.
+func (e *authTestEnv) finishPasskeySignup(c *http.Client, begin map[string]any) *passkey {
+	e.t.Helper()
 	opts, err := virtualwebauthn.ParseAttestationOptions(mustJSON(e.t, begin["options"]))
 	if err != nil {
 		e.t.Fatalf("ParseAttestationOptions: %v", err)

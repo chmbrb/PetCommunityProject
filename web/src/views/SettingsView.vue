@@ -11,17 +11,19 @@ import {
   listSessions,
   removePasskey,
   renamePasskey,
+  requestSignInLink,
   revokeOtherSessions,
   revokeSession,
   type Passkey,
   type SessionInfo,
 } from '../api/client'
+import EmailCodeForm from '../components/EmailCodeForm.vue'
 import ProfilePhotoSection from '../components/ProfilePhotoSection.vue'
 import { deviceLabel } from '../deviceLabel'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
-const { me, loaded, signIn } = useSession()
+const { me, loaded, signIn, signInWithEmail } = useSession()
 
 const passkeys = ref<Passkey[]>([])
 const sessions = ref<SessionInfo[]>([])
@@ -30,6 +32,9 @@ const notice = ref<string | null>(null)
 const busy = ref(false)
 
 const otherSessions = computed(() => sessions.value.filter((s) => !s.current))
+// The only passkey can be removed once the email is confirmed: email sign-in is then
+// the way back in.
+const canRemoveLast = computed(() => me.value?.account.email_verified ?? false)
 
 async function load() {
   ;[passkeys.value, sessions.value] = await Promise.all([listPasskeys(), listSessions()])
@@ -46,9 +51,10 @@ watch(
 )
 
 // Changing passkeys needs a recent sign-in. When the server asks for one, the person
-// confirms with a passkey and the action is retried.
+// confirms with a passkey or an emailed code, and the action is retried.
 const confirmOpen = ref(false)
 const confirmError = ref<string | null>(null)
+const confirmCodeSent = ref(false)
 let pendingAction: (() => Promise<void>) | null = null
 
 async function run(action: () => Promise<void>, done?: string) {
@@ -69,6 +75,7 @@ async function run(action: () => Promise<void>, done?: string) {
         }
       }
       confirmError.value = null
+      confirmCodeSent.value = false
       confirmOpen.value = true
     } else {
       error.value = describePasskeyError(err)
@@ -78,30 +85,55 @@ async function run(action: () => Promise<void>, done?: string) {
   }
 }
 
-async function confirmIdentity() {
+/** Signs in again with signInAgain, then retries the action that needed it. */
+async function reconfirm(signInAgain: () => Promise<void>) {
   const accountBefore = me.value?.account.id
+  await signInAgain()
+  confirmOpen.value = false
+  if (me.value?.account.id !== accountBefore) {
+    pendingAction = null
+    error.value = 'You confirmed as a different account, so nothing was changed.'
+    return
+  }
+  const action = pendingAction
+  pendingAction = null
+  if (action) {
+    await action()
+  }
+  await load()
+}
+
+async function confirmWithPasskey() {
   confirmError.value = null
   busy.value = true
   try {
-    await signIn()
-    if (me.value?.account.id !== accountBefore) {
-      confirmOpen.value = false
-      pendingAction = null
-      error.value = 'You confirmed with a passkey for a different account, so nothing was changed.'
-      return
-    }
-    confirmOpen.value = false
-    const action = pendingAction
-    pendingAction = null
-    if (action) {
-      await action()
-    }
-    await load()
+    await reconfirm(signIn)
   } catch (err) {
     confirmError.value = describePasskeyError(err)
   } finally {
     busy.value = false
   }
+}
+
+async function sendConfirmCode() {
+  if (!me.value) {
+    return
+  }
+  confirmError.value = null
+  busy.value = true
+  try {
+    await requestSignInLink(me.value.account.email)
+    confirmCodeSent.value = true
+  } catch (err) {
+    confirmError.value = describePasskeyError(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+function confirmWithCode(code: string) {
+  const email = me.value?.account.email ?? ''
+  return reconfirm(() => signInWithEmail({ email, code }))
 }
 
 // Adding a passkey
@@ -238,11 +270,19 @@ function formatDateTime(iso: string) {
           Passkeys
         </h2>
         <p class="text-body-2 text-medium-emphasis mb-4">
-          Passkeys let you sign in with your fingerprint, face, or device PIN. Add one for each
-          device you use, so losing a device doesn't lock you out.
+          Passkeys let you sign in with your fingerprint, face, or device PIN, and can't be
+          phished. They're optional: you can always sign in with a code we email you. Add one
+          for each device you use.
         </p>
 
+        <p
+          v-if="passkeys.length === 0"
+          class="text-body-2 mb-3"
+        >
+          You don't have a passkey yet. You sign in with codes we email you.
+        </p>
         <v-list
+          v-else
           lines="two"
           class="mb-3"
           border
@@ -281,7 +321,7 @@ function formatDateTime(iso: string) {
                   />
                   <v-list-item
                     title="Remove"
-                    :disabled="passkeys.length < 2"
+                    :disabled="passkeys.length < 2 && !canRemoveLast"
                     base-color="error"
                     @click="removeTarget = p"
                   />
@@ -291,10 +331,11 @@ function formatDateTime(iso: string) {
           </v-list-item>
         </v-list>
         <p
-          v-if="passkeys.length === 1"
+          v-if="passkeys.length === 1 && !canRemoveLast"
           class="text-body-2 text-medium-emphasis mb-3"
         >
-          This is your only passkey, so it can't be removed.
+          Confirm your email address before removing your only passkey, so you can still sign
+          in by email.
         </p>
         <v-btn
           color="primary"
@@ -310,7 +351,7 @@ function formatDateTime(iso: string) {
           Signed-in devices
         </h2>
         <p class="text-body-2 text-medium-emphasis mb-4">
-          If you don't recognize a device, sign it out and check your passkeys.
+          If you don't recognize a device, sign it out and check your passkeys and email.
         </p>
 
         <v-list
@@ -432,8 +473,11 @@ function formatDateTime(iso: string) {
     >
       <v-card title="Remove passkey?">
         <v-card-text>
-          You won't be able to sign in with “{{ removeTarget?.name }}” any more. We'll email you
-          a notice.
+          You won't be able to sign in with “{{ removeTarget?.name }}” any more.
+          <template v-if="passkeys.length === 1">
+            It's your only passkey, so you'll sign in with codes we email you.
+          </template>
+          We'll email you a notice.
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -458,10 +502,19 @@ function formatDateTime(iso: string) {
     >
       <v-card title="Confirm it's you">
         <v-card-text>
-          <p class="mb-2">
-            To change your passkeys, please sign in again with a passkey. This protects your
+          <p class="mb-4">
+            To change how you sign in, please confirm it's you again. This protects your
             account if someone else gets hold of this device.
           </p>
+          <template v-if="confirmCodeSent">
+            <p class="mb-4">
+              We've emailed a code to <strong>{{ me?.account.email }}</strong>.
+            </p>
+            <EmailCodeForm
+              :submit="confirmWithCode"
+              label="Confirm"
+            />
+          </template>
           <v-alert
             v-if="confirmError"
             type="error"
@@ -477,11 +530,19 @@ function formatDateTime(iso: string) {
             Cancel
           </v-btn>
           <v-btn
+            v-if="!confirmCodeSent"
+            :loading="busy"
+            @click="sendConfirmCode"
+          >
+            Email me a code
+          </v-btn>
+          <v-btn
+            v-if="passkeys.length > 0"
             color="primary"
             :loading="busy"
-            @click="confirmIdentity"
+            @click="confirmWithPasskey"
           >
-            Confirm with a passkey
+            Use a passkey
           </v-btn>
         </v-card-actions>
       </v-card>

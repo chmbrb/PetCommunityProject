@@ -44,6 +44,8 @@ func New(cfg config.Config, st Store, authSvc AuthService, mediaSvc MediaService
 
 	mux.HandleFunc("POST /api/v1/auth/signup/begin", s.handleSignupBegin)
 	mux.HandleFunc("POST /api/v1/auth/signup/finish", s.handleSignupFinish)
+	mux.HandleFunc("POST /api/v1/auth/signup/email/request", s.handleEmailSignupRequest)
+	mux.HandleFunc("POST /api/v1/auth/signup/email/finish", s.handleEmailSignupFinish)
 	mux.HandleFunc("POST /api/v1/auth/login/begin", s.handleLoginBegin)
 	mux.HandleFunc("POST /api/v1/auth/login/finish", s.handleLoginFinish)
 	mux.HandleFunc("POST /api/v1/auth/login/email/request", s.handleSignInLinkRequest)
