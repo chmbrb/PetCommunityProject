@@ -19,7 +19,7 @@ Items that shape what's being built now, even before there are public users.
 
 The first public users, user content, and messaging.
 
-- [ ] **Terms of service, privacy policy, and community guidelines.** The privacy policy must match what the system actually does (FTC Act § 5): approximate locations, metadata stripping, what push notifications carry, and that deletion can't reach backups until they expire.
+- [ ] **Terms of service, privacy policy, and community guidelines.** The community guidelines can reuse the list of unacceptable behavior in the project's [Code of Conduct](../CODE_OF_CONDUCT.md#examples), adapted for platform users. The privacy policy must match what the system actually does (FTC Act § 5): approximate locations, metadata stripping, what push notifications carry, and that deletion can't reach backups until they expire.
 - [ ] **Minimum age (COPPA).** The amended COPPA rule took effect in 2025, with compliance due in April 2026. Simplest path: an age gate at sign-up with a minimum of 13, and 18+ for adoption applications, fostering, and sitting, since those involve agreements. See the state minors' laws in [Phase 3](#phase-3-communities), which may make 18+ for everyone the easier choice.
 - [ ] **Copyright (DMCA § 512).** Register a designated agent with the Copyright Office ($6, renewed every 3 years), and publish a takedown and counter-notice process and a repeat-infringer policy. Scammers often reuse other people's pet photos, so expect to use it.
 - [ ] **Non-consensual intimate imagery (TAKE IT DOWN Act, 2025).** Platforms built on user content must offer a removal request process and remove reported images within 48 hours. Platforms had to comply by May 2026, so this is needed at launch.
