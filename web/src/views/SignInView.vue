@@ -6,6 +6,7 @@ import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError, requestSignInLink } from '../api/client'
 import EmailCodeForm from '../components/EmailCodeForm.vue'
 import PasswordField from '../components/PasswordField.vue'
+import SecondStepForm from '../components/SecondStepForm.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
@@ -23,6 +24,21 @@ const busy = ref<'password' | 'email' | null>(null)
 // After asking for an email: 'sign-in' for a sign-in code, 'new-device' for the code
 // that confirms a password sign-in on this device.
 const codeFor = ref<'sign-in' | 'new-device' | null>(null)
+// Set when the first step succeeded and the account uses two-step sign-in.
+const mfaToken = ref<string | null>(null)
+
+/** Moves to the second step if err asks for it; returns false for other errors. */
+function secondStepNeeded(err: unknown) {
+  if (err instanceof ApiError && err.code === 'mfa_required' && err.mfaToken) {
+    mfaToken.value = err.mfaToken
+    return true
+  }
+  return false
+}
+
+async function done() {
+  await router.push({ name: 'home' })
+}
 
 function describe(err: unknown) {
   return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
@@ -50,7 +66,7 @@ async function withPassword() {
   } catch (err) {
     if (err instanceof ApiError && err.code === 'email_code_required') {
       codeFor.value = 'new-device'
-    } else {
+    } else if (!secondStepNeeded(err)) {
       error.value = describe(err)
     }
   } finally {
@@ -72,16 +88,24 @@ async function sendCode() {
 }
 
 async function confirmCode(code: string) {
-  if (codeFor.value === 'new-device') {
-    await signInWithPassword(email.value, password.value, code)
-  } else {
-    await signInWithEmail({ email: email.value, code })
+  try {
+    if (codeFor.value === 'new-device') {
+      await signInWithPassword(email.value, password.value, code)
+    } else {
+      await signInWithEmail({ email: email.value, code })
+    }
+  } catch (err) {
+    if (secondStepNeeded(err)) {
+      return
+    }
+    throw err
   }
-  await router.push({ name: 'home' })
+  await done()
 }
 
 function startOver() {
   codeFor.value = null
+  mfaToken.value = null
   password.value = ''
 }
 </script>
@@ -95,7 +119,15 @@ function startOver() {
       Sign in
     </h1>
 
-    <template v-if="codeFor">
+    <template v-if="mfaToken">
+      <SecondStepForm
+        :mfa-token="mfaToken"
+        @done="done"
+        @restart="startOver"
+      />
+    </template>
+
+    <template v-else-if="codeFor">
       <p
         v-if="codeFor === 'new-device'"
         class="text-body-1 mb-4"

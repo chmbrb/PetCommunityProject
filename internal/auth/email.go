@@ -37,6 +37,8 @@ const (
 	PurposePasskeyRemoved = "passkey_removed"
 	// PurposePasswordChanged's Detail says what happened: added, changed, or removed.
 	PurposePasswordChanged = "password_changed"
+	// PurposeMFAChanged's Detail says what happened to two-step sign-in.
+	PurposeMFAChanged = "mfa_changed"
 )
 
 // QueueEmail is the job queue that sends email.
@@ -127,9 +129,11 @@ func (s *Service) RequestSignInLink(ctx context.Context, email string) error {
 }
 
 // FinishEmailSignIn signs in with the link or code from a sign-in email. Using it
-// also proves the person controls the address, so it verifies the email.
+// also proves the person controls the address, so it verifies the email. Accounts with
+// two-step sign-in get an *MFARequiredError instead of a session.
 func (s *Service) FinishEmailSignIn(ctx context.Context, proof EmailProof, client Client) (Session, error) {
 	var issued Session
+	var secondStep *MFARequiredError
 	err := s.withEmailProof(ctx, proof, PurposeSignIn, func(_ pgx.Tx, q *store.Queries, row emailToken) error {
 		acct, err := q.GetAccountForEmail(ctx, row.AccountID.UUID)
 		if err != nil {
@@ -147,9 +151,20 @@ func (s *Service) FinishEmailSignIn(ctx context.Context, proof EmailProof, clien
 		if err := q.TouchAccount(ctx, acct.ID); err != nil {
 			return err
 		}
+		// The email token stays used even when a second step is needed, so the
+		// transaction commits either way.
+		if err := requireSecondStep(ctx, q, acct.ID, client); err != nil {
+			if errors.As(err, &secondStep) {
+				return nil
+			}
+			return err
+		}
 		issued, err = createSession(ctx, q, acct.ID, client)
 		return err
 	})
+	if err == nil && secondStep != nil {
+		return Session{}, secondStep
+	}
 	return issued, err
 }
 
@@ -393,7 +408,7 @@ func (e *Emailer) Send(ctx context.Context, job EmailJob) error {
 	}
 
 	switch job.Purpose {
-	case PurposePasskeyAdded, PurposePasskeyRemoved, PurposePasswordChanged:
+	case PurposePasskeyAdded, PurposePasskeyRemoved, PurposePasswordChanged, PurposeMFAChanged:
 		return e.sendNotice(ctx, acct, job)
 	}
 
@@ -504,6 +519,8 @@ func (e *Emailer) sendNotice(ctx context.Context, acct store.GetAccountForEmailR
 		render = pcmail.PasskeyRemoved
 	case PurposePasswordChanged:
 		render = pcmail.PasswordChanged
+	case PurposeMFAChanged:
+		render = pcmail.MFAChanged
 	}
 	msg, err := render(acct.Email, pcmail.LinkEmail{
 		InstanceName: e.instanceName,

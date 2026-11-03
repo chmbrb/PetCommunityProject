@@ -415,3 +415,26 @@ func TestBreachedPasswordCheck(t *testing.T) {
 		t.Error("invalid value accepted")
 	}
 }
+
+func TestMFAKey(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
+	if err != nil || !bytes.Equal(cfg.MFAKey, DevMFAKey) || cfg.RequireMFAKey() != nil {
+		t.Errorf("development default: key set %v, err %v / %v", cfg.MFAKey != nil, err, cfg.RequireMFAKey())
+	}
+	prod := Config{Env: Production}
+	if prod.RequireMFAKey() == nil {
+		t.Error("production without PC_MFA_KEY accepted")
+	}
+	prod.MFAKey = DevMFAKey
+	if prod.RequireMFAKey() == nil {
+		t.Error("production with the development MFA key accepted")
+	}
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	cfg, err = Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x", "PC_MFA_KEY_FILE": writeSecret(t, key+"\n")}))
+	if err != nil || !bytes.Equal(cfg.MFAKey, bytes.Repeat([]byte{9}, 32)) {
+		t.Errorf("PC_MFA_KEY_FILE: err %v", err)
+	}
+	if _, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x", "PC_MFA_KEY": "c2hvcnQ="})); err == nil || !strings.Contains(err.Error(), "PC_MFA_KEY must be 32 bytes") {
+		t.Errorf("short key: err = %v", err)
+	}
+}

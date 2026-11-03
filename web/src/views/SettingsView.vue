@@ -2,15 +2,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { startRegistration } from '@simplewebauthn/browser'
-import { mdiCellphone, mdiDotsVertical, mdiKeyVariant, mdiMonitor } from '@mdi/js'
+import { mdiCellphone, mdiContentCopy, mdiDotsVertical, mdiKeyVariant, mdiMonitor } from '@mdi/js'
+import { renderSVG } from 'uqr'
 import {
   ApiError,
   beginAddPasskey,
+  beginTotpSetup,
+  confirmTotp,
+  fetchInstance,
   finishAddPasskey,
   listPasskeys,
   listSessions,
+  regenerateRecoveryCodes,
   removePasskey,
   removePassword,
+  removeTotp,
   renamePasskey,
   requestSignInLink,
   revokeOtherSessions,
@@ -22,11 +28,17 @@ import {
 import EmailCodeForm from '../components/EmailCodeForm.vue'
 import PasswordField from '../components/PasswordField.vue'
 import ProfilePhotoSection from '../components/ProfilePhotoSection.vue'
+import RecoveryCodesList from '../components/RecoveryCodesList.vue'
+import SecondStepForm from '../components/SecondStepForm.vue'
 import { deviceLabel } from '../deviceLabel'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
 
 const { me, loaded, signIn, signInWithEmail, refresh } = useSession()
+const instanceName = ref('')
+fetchInstance()
+  .then((i) => (instanceName.value = i.name))
+  .catch(() => {})
 
 const passkeys = ref<Passkey[]>([])
 const sessions = ref<SessionInfo[]>([])
@@ -58,6 +70,10 @@ watch(
 const confirmOpen = ref(false)
 const confirmError = ref<string | null>(null)
 const confirmCodeSent = ref(false)
+// Set when the account uses two-step sign-in, after the emailed code.
+const confirmMfaToken = ref<string | null>(null)
+// The account confirming, so confirming as someone else changes nothing.
+let confirmingAccount: string | undefined
 let pendingAction: (() => Promise<void>) | null = null
 
 async function run(action: () => Promise<void>, done?: string) {
@@ -79,6 +95,8 @@ async function run(action: () => Promise<void>, done?: string) {
       }
       confirmError.value = null
       confirmCodeSent.value = false
+      confirmMfaToken.value = null
+      confirmingAccount = me.value?.account.id
       confirmOpen.value = true
     } else {
       error.value = describePasskeyError(err)
@@ -89,11 +107,10 @@ async function run(action: () => Promise<void>, done?: string) {
 }
 
 /** Signs in again with signInAgain, then retries the action that needed it. */
-async function reconfirm(signInAgain: () => Promise<void>) {
-  const accountBefore = me.value?.account.id
-  await signInAgain()
+/** After signing in again: retries the action that needed it. */
+async function afterReconfirm() {
   confirmOpen.value = false
-  if (me.value?.account.id !== accountBefore) {
+  if (me.value?.account.id !== confirmingAccount) {
     pendingAction = null
     error.value = 'You confirmed as a different account, so nothing was changed.'
     return
@@ -110,7 +127,8 @@ async function confirmWithPasskey() {
   confirmError.value = null
   busy.value = true
   try {
-    await reconfirm(signIn)
+    await signIn()
+    await afterReconfirm()
   } catch (err) {
     confirmError.value = describePasskeyError(err)
   } finally {
@@ -134,9 +152,86 @@ async function sendConfirmCode() {
   }
 }
 
-function confirmWithCode(code: string) {
-  const email = me.value?.account.email ?? ''
-  return reconfirm(() => signInWithEmail({ email, code }))
+async function confirmWithCode(code: string) {
+  try {
+    await signInWithEmail({ email: me.value?.account.email ?? '', code })
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'mfa_required' && err.mfaToken) {
+      confirmMfaToken.value = err.mfaToken
+      return
+    }
+    throw err
+  }
+  await afterReconfirm()
+}
+
+async function confirmSecondStepDone() {
+  try {
+    await afterReconfirm()
+  } catch (err) {
+    error.value = describePasskeyError(err)
+  }
+}
+
+// Two-step sign-in
+const totpSetup = ref<{ secret: string; uri: string } | null>(null)
+const totpCode = ref('')
+const recoveryCodes = ref<string[] | null>(null)
+const codesSaved = ref(false)
+const totpOffOpen = ref(false)
+const keyCopied = ref(false)
+
+const qrSrc = computed(() =>
+  totpSetup.value
+    ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(renderSVG(totpSetup.value.uri, { border: 2 }))
+    : '',
+)
+// The setup key in groups of four, easier to read and type.
+const groupedKey = computed(() => totpSetup.value?.secret.match(/.{1,4}/g)?.join(' ') ?? '')
+
+function startTotp() {
+  return run(async () => {
+    totpSetup.value = await beginTotpSetup()
+    totpCode.value = ''
+    keyCopied.value = false
+  })
+}
+
+function finishTotp() {
+  const code = totpCode.value
+  return run(async () => {
+    const codes = await confirmTotp(code)
+    totpSetup.value = null
+    showRecoveryCodes(codes)
+    await refresh()
+  }, 'Two-step sign-in is on. We emailed you a notice.')
+}
+
+async function copyKey() {
+  if (totpSetup.value) {
+    await navigator.clipboard.writeText(totpSetup.value.secret)
+    keyCopied.value = true
+  }
+}
+
+function showRecoveryCodes(codes: string[]) {
+  codesSaved.value = false
+  recoveryCodes.value = codes
+}
+
+function newRecoveryCodes() {
+  return run(async () => {
+    showRecoveryCodes(await regenerateRecoveryCodes())
+    await refresh()
+  }, 'New recovery codes created. The old ones no longer work.')
+}
+
+function turnOffTotp() {
+  return run(async () => {
+    await removeTotp()
+    totpOffOpen.value = false
+    await refresh()
+  }, 'Two-step sign-in is off. We emailed you a notice.')
 }
 
 // Adding a passkey
@@ -334,6 +429,55 @@ function formatDateTime(iso: string) {
             Remove password
           </v-btn>
         </div>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="text-h6 mb-1">
+          Two-step sign-in
+        </h2>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          With two-step sign-in, signing in with an email code or password also needs a code
+          from an authenticator app or password manager, so someone who gets into your email
+          or learns your password still can't sign in. Passkeys work as they are.
+        </p>
+        <template v-if="me.mfa.totp_enabled_at">
+          <p class="text-body-2 mb-3">
+            On since {{ formatDate(me.mfa.totp_enabled_at) }}.
+            {{ me.mfa.recovery_codes_left }} of 10 recovery codes left.
+          </p>
+          <v-alert
+            v-if="me.mfa.recovery_codes_left <= 2"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+          >
+            You're running out of recovery codes. Create new ones so you can still sign in if
+            you lose your authenticator.
+          </v-alert>
+          <div class="d-flex flex-wrap ga-2">
+            <v-btn
+              variant="outlined"
+              @click="newRecoveryCodes"
+            >
+              New recovery codes
+            </v-btn>
+            <v-btn
+              variant="text"
+              @click="totpOffOpen = true"
+            >
+              Turn off
+            </v-btn>
+          </div>
+        </template>
+        <v-btn
+          v-else
+          color="primary"
+          :loading="busy && totpSetup === null"
+          @click="startTotp"
+        >
+          Turn on two-step sign-in
+        </v-btn>
       </section>
 
       <section class="mb-10">
@@ -550,6 +694,137 @@ function formatDateTime(iso: string) {
     </v-dialog>
 
     <v-dialog
+      :model-value="totpSetup !== null"
+      max-width="480"
+      persistent
+    >
+      <v-card title="Set up two-step sign-in">
+        <v-form @submit.prevent="finishTotp">
+          <v-card-text>
+            <p class="mb-4">
+              Scan this QR code with an authenticator app (such as Aegis, Google Authenticator,
+              or Microsoft Authenticator) or your password manager:
+            </p>
+            <div class="d-flex justify-center mb-4">
+              <img
+                :src="qrSrc"
+                width="200"
+                height="200"
+                alt="QR code for your authenticator app"
+              >
+            </div>
+            <p class="text-body-2 mb-2">
+              Can't scan it? Enter this setup key instead, or on this phone,
+              <a :href="totpSetup?.uri">open it in your authenticator app</a>:
+            </p>
+            <div class="d-flex align-center ga-2 mb-6">
+              <code class="setup-key">{{ groupedKey }}</code>
+              <v-btn
+                :icon="mdiContentCopy"
+                variant="text"
+                size="small"
+                :aria-label="keyCopied ? 'Setup key copied' : 'Copy setup key'"
+                @click="copyKey"
+              />
+            </div>
+            <v-text-field
+              v-model="totpCode"
+              label="Code from the app"
+              hint="Enter the 6-digit code it shows, to check it's set up."
+              persistent-hint
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="7"
+            />
+            <v-alert
+              v-if="error"
+              type="error"
+              variant="tonal"
+              class="mt-4"
+            >
+              {{ error }}
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="totpSetup = null">
+              Cancel
+            </v-btn>
+            <v-btn
+              type="submit"
+              color="primary"
+              :loading="busy"
+            >
+              Turn on
+            </v-btn>
+          </v-card-actions>
+        </v-form>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      :model-value="recoveryCodes !== null"
+      max-width="520"
+      persistent
+    >
+      <v-card title="Save your recovery codes">
+        <v-card-text>
+          <p class="mb-4">
+            If you lose your authenticator, each of these codes lets you sign in once. Keep
+            them somewhere safe, like your password manager or a printout. They won't be shown
+            again.
+          </p>
+          <RecoveryCodesList
+            v-if="recoveryCodes"
+            :codes="recoveryCodes"
+            :instance-name="instanceName"
+          />
+          <v-checkbox
+            v-model="codesSaved"
+            label="I've saved my recovery codes"
+            class="mt-4"
+            hide-details
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            color="primary"
+            :disabled="!codesSaved"
+            @click="recoveryCodes = null"
+          >
+            Done
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      v-model="totpOffOpen"
+      max-width="440"
+    >
+      <v-card title="Turn off two-step sign-in?">
+        <v-card-text>
+          Signing in with an email code or password won't need a code from your authenticator
+          any more, and your recovery codes will stop working. We'll email you a notice.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="totpOffOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="error"
+            :loading="busy"
+            @click="turnOffTotp"
+          >
+            Turn off
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
       v-model="removePasswordOpen"
       max-width="440"
     >
@@ -654,7 +929,13 @@ function formatDateTime(iso: string) {
             To change how you sign in, please confirm it's you again. This protects your
             account if someone else gets hold of this device.
           </p>
-          <template v-if="confirmCodeSent">
+          <SecondStepForm
+            v-if="confirmMfaToken"
+            :mfa-token="confirmMfaToken"
+            @done="confirmSecondStepDone"
+            @restart="confirmMfaToken = null; confirmCodeSent = false"
+          />
+          <template v-else-if="confirmCodeSent">
             <p class="mb-4">
               We've emailed a code to <strong>{{ me?.account.email }}</strong>.
             </p>
@@ -697,3 +978,12 @@ function formatDateTime(iso: string) {
     </v-dialog>
   </v-container>
 </template>
+
+<style scoped>
+.setup-key {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  word-break: break-all;
+}
+</style>

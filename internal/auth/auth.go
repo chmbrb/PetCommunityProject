@@ -63,6 +63,7 @@ type Session struct {
 	Token     string
 	ExpiresAt time.Time
 	AccountID uuid.UUID
+	Client    Client
 	// DeviceToken is set when the device had no device token yet: the client keeps it
 	// so later password sign-ins from this device are recognized.
 	DeviceToken string
@@ -108,6 +109,8 @@ type Service struct {
 	breaches BreachChecker
 	// hashing holds one slot per password hash in progress.
 	hashing chan struct{}
+	// mfa encrypts TOTP secrets; nil when no MFA key is configured.
+	mfa *mfaSealer
 }
 
 // New configures passkeys for this instance. Emails are queued on queue and sent by
@@ -136,6 +139,11 @@ func New(cfg config.Config, db *database.Store, queue JobQueue, logger *slog.Log
 	}
 	if cfg.BreachedPasswordCheck {
 		svc.breaches = NewPwnedPasswords()
+	}
+	if len(cfg.MFAKey) > 0 {
+		if svc.mfa, err = newMFASealer(cfg.MFAKey); err != nil {
+			return nil, err
+		}
 	}
 	return svc, nil
 }
@@ -491,7 +499,7 @@ func createSession(ctx context.Context, q *store.Queries, accountID uuid.UUID, c
 	}
 	// Every sign-in, by any method, makes the device known to the account.
 	device, err := rememberDevice(ctx, q, accountID)
-	return Session{Token: token, ExpiresAt: expires, AccountID: accountID, DeviceToken: device}, err
+	return Session{Token: token, ExpiresAt: expires, AccountID: accountID, Client: client, DeviceToken: device}, err
 }
 
 // newToken returns a random 256-bit token for a session or an email link, and the hash

@@ -69,6 +69,12 @@ func PasswordChanged(to string, data LinkEmail) (Message, error) {
 	return render(to, "Your "+data.InstanceName+" password was "+data.Detail, "password_changed", data)
 }
 
+// MFAChanged tells the person about a change to two-step sign-in (data.Detail), in case
+// it wasn't them.
+func MFAChanged(to string, data LinkEmail) (Message, error) {
+	return render(to, "Two-step sign-in changed on your "+data.InstanceName+" account", "mfa_changed", data)
+}
+
 func render(to, subject, name string, data LinkEmail) (Message, error) {
 	var text, html bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, name+".txt", data); err != nil {

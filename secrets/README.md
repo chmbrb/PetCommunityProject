@@ -16,14 +16,17 @@ make secrets   # or: deploy/make-secrets.sh [DIR]
 | `db_password`   | Database password (generated)                                 | db, app, worker, migrate |
 | `secret_key`    | Encrypts actors' private signing keys (generated, ADR 0012)   | worker            |
 | `backup_key`    | Encrypts backups (generated, ADR 0016)                        | backup            |
+| `mfa_key`       | Encrypts authenticator (TOTP) secrets (generated, ADR 0014)   | app               |
 | `smtp_password` | Your email provider's SMTP password (may be empty)            | worker            |
 | `s3_access_key` | Your storage provider's access key ID                         | app, worker, migrate |
 | `s3_secret_key` | Your storage provider's secret key                            | app, worker, migrate |
 
 - The script never overwrites a file. Changing `db_password` after the database was
   created doesn't change the database's password; change it in Postgres too.
-- **Keep an offline copy of `backup_key` and `secret_key`**, away from this server and
-  its backups. A restore needs both.
+- **Keep an offline copy of `backup_key`, `secret_key`, and `mfa_key`**, away from this
+  server and its backups. A restore needs all three: without `mfa_key`, nobody with
+  two-step sign-in can finish signing in (they'd have to use their recovery codes, and
+  then set up their authenticator again).
 - The folder should be `0700` and the files `0444`: readable inside the containers
   (which run as unprivileged users), but not by other users on the host.
 - To keep secrets elsewhere (another disk, a tmpfs filled by a secret manager), set

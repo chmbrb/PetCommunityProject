@@ -124,6 +124,19 @@ func TestPasswordEmails(t *testing.T) {
 	}
 }
 
+func TestMFAChanged(t *testing.T) {
+	msg, err := MFAChanged("sam@example.org", LinkEmail{
+		InstanceName: "Eastside Pets", DisplayName: "Sam", Link: "https://x/settings",
+		Detail: "A recovery code was used to sign in (9 left)",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Text, "A recovery code was used to sign in (9 left) on your Eastside Pets account.") {
+		t.Errorf("text:\n%s", msg.Text)
+	}
+}
+
 func TestRecorder(t *testing.T) {
 	var r Recorder
 	_ = r.Send(t.Context(), Message{To: "a@example.org"})
