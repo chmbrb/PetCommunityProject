@@ -42,6 +42,7 @@ Go backend · PostgreSQL (with PostGIS) · Vue 3 + Vuetify web app, packaged for
 - [Personas](docs/PERSONAS.md): who the platform serves, and the bad actors it must withstand
 - [Domain model](docs/DOMAIN_MODEL.md): core entities and how they map to ActivityPub
 - [Threat model](docs/THREAT_MODEL.md): risks and mitigations by phase
+- [Compliance](docs/COMPLIANCE.md): federal, state, and local requirements by phase, as a checklist for legal review
 - [Architecture decision records](docs/adr/README.md)
 - [Repository setup](docs/REPOSITORY_SETUP.md): how the GitHub repository and maintainer accounts are secured
 

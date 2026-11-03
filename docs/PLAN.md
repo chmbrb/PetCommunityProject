@@ -1,6 +1,6 @@
 # Plan
 
-This document records project decisions and the phased roadmap. For the project's vision, see the [README](../README.md).
+This document records project decisions and the phased roadmap. For the project's vision, see the [README](../README.md). Legal and regulatory requirements for each phase are tracked in [COMPLIANCE.md](COMPLIANCE.md).
 
 ## Decisions
 
@@ -146,14 +146,14 @@ To decide: the actual periods, whether they're fixed for all instances or set pe
 - **Exit:** two instances federate listings and communities with moderation working across both
 
 ### Phase 6: Verified Breeders
-- Prerequisite: legal review of animal sale and breeder rules in the launch jurisdiction(s)
+- Prerequisite: legal review of animal sale and breeder rules in the launch jurisdiction(s) (see [COMPLIANCE.md](COMPLIANCE.md#phase-6-verified-breeders))
 - Breeder verification flow, listing caps, reviews, revocation
 - Anti-scam warnings and reporting
 - Decide how breeder listings federate (e.g. local-only, or only to allow-listed instances)
 - **Exit:** breeder listings live with no unresolved fraud reports during the pilot
 
 ### Phase 7: Pet Sitting and Monetization
-- Prerequisite: legal review of pet-sitting liability in the launch jurisdiction(s), and platform insurance in place (general liability, directors and officers, cyber)
+- Prerequisite: legal review of pet-sitting liability in the launch jurisdiction(s), and platform insurance in place (general liability, directors and officers, cyber) (see [COMPLIANCE.md](COMPLIANCE.md#phase-7-pet-sitting-and-monetization))
 - Pet sitting as an instance-level feature flag, off by default
 - Directory model: sitters set their own rates, schedules, and terms. The platform connects people but doesn't assign, price, or direct the work.
 - Sitter verification: ID check and valid liability insurance and bonding certificate, re-checked on expiry. Badge wording says exactly what was verified and when.
