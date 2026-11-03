@@ -187,6 +187,7 @@ Operator tasks to come back to. Details are in [DEVELOPMENT.md](DEVELOPMENT.md) 
 - Shelterluv and PetPoint: confirm API access, endpoints, and terms of use with each vendor before Phase 2
 - Identity verification provider and its cost
 - Legal entity: the project lead currently runs the project and the first instance personally, with the aim of bringing in others and growing through federation. Until a legal entity (ideally a nonprofit) exists, liability is personal, and the Apple fee waiver and organization store accounts aren't available. Form it before the public app release (Phase 3), and before breeders or pet sitting are enabled.
+- Code of Conduct reporting address: `conduct@` on the project's domain once it's chosen. Until then, [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md#reporting-an-issue) has a placeholder and points to GitHub's report-content feature. Set it before inviting outside contributors.
 - How instances are funded before Phase 7. Donations could be turned on as early as Phase 2.
 - Target reserve size (e.g. 6–12 months of operating costs)
 - Platform insurance cost per instance, and whether it's affordable for small operators
