@@ -7,6 +7,7 @@ Thanks for your interest in PetCommunityProject. It's early (Phase 1), led by on
 - **Open an issue first** for anything beyond a small fix, so we can agree on the approach before you spend time on it. The [plan and roadmap](docs/PLAN.md) and the [architecture decision records](docs/adr/README.md) explain what's planned and why.
 - **A contributor agreement is still being decided.** It's needed to publish the mobile apps in the app stores. Until it is, please talk to us in an issue before submitting code. Documentation fixes are welcome any time.
 - **Security problems** go through [SECURITY.md](SECURITY.md), never a public issue or pull request.
+- **Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md)** in the project's issues, pull requests, and other spaces. It also explains how to report a problem.
 
 ## Setting up
 
