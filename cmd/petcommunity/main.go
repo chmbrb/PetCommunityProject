@@ -109,6 +109,10 @@ func newLogger(cfg config.Config, w io.Writer) *slog.Logger {
 }
 
 func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// Checked before connecting, so a missing key fails fast with a clear message.
+	if err := cfg.RequireMFAKey(); err != nil {
+		return err
+	}
 	pool, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err

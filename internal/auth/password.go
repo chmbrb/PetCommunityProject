@@ -182,10 +182,11 @@ func (s *Service) hashNewPassword(ctx context.Context, password, email, handle s
 	return hash, herr
 }
 
-// PasswordSignIn signs in with an email address and password. From a device the
-// account hasn't signed in from before, a correct password isn't enough: it emails a
-// code and returns ErrNewDeviceCode, and the person repeats the request with the code.
-// A leaked password alone therefore can't take over the account.
+// PasswordSignIn signs in with an email address and password. A correct password isn't
+// always enough, so a leaked password alone can't take over the account: accounts with
+// two-step sign-in get an *MFARequiredError, and from a device the account hasn't
+// signed in from before, others get ErrNewDeviceCode and an emailed code, and repeat
+// the request with it.
 func (s *Service) PasswordSignIn(ctx context.Context, email, password, code string, client Client) (Session, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" || len(password) > 4*maxPasswordLength {
@@ -248,6 +249,16 @@ func (s *Service) PasswordSignIn(ctx context.Context, email, password, code stri
 			}
 		}
 
+		// With two-step sign-in, the authenticator code is the second step, on every
+		// device. Without it, devices the account hasn't used need an emailed code.
+		if err := requireSecondStep(ctx, q, row.ID, client); err != nil {
+			var secondStep *MFARequiredError
+			if errors.As(err, &secondStep) {
+				outcome = secondStep
+				return nil
+			}
+			return err
+		}
 		known, err := isKnownDevice(ctx, q, row.ID)
 		if err != nil {
 			return err

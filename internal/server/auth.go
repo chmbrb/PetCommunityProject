@@ -35,6 +35,11 @@ type AuthService interface {
 	FinishEmailSignup(ctx context.Context, proof auth.EmailProof, password string, client auth.Client) (auth.Session, error)
 	PasswordSignIn(ctx context.Context, email, password, code string, client auth.Client) (auth.Session, error)
 	SetPassword(ctx context.Context, p auth.Principal, password string) error
+	FinishMFA(ctx context.Context, mfaToken, code, recoveryCode string) (auth.Session, error)
+	BeginTOTPSetup(ctx context.Context, p auth.Principal, issuer string) (auth.TOTPSetup, error)
+	ConfirmTOTP(ctx context.Context, p auth.Principal, code string) ([]string, error)
+	RemoveTOTP(ctx context.Context, p auth.Principal) error
+	RegenerateRecoveryCodes(ctx context.Context, p auth.Principal) ([]string, error)
 	RemovePassword(ctx context.Context, p auth.Principal) error
 	VerifyEmail(ctx context.Context, token string) error
 	ResendVerification(ctx context.Context, accountID uuid.UUID) error
@@ -137,6 +142,7 @@ type finishRequest struct {
 
 type meResponse struct {
 	Account accountJSON  `json:"account"`
+	MFA     mfaJSON      `json:"mfa"`
 	Actor   actorJSON    `json:"actor"`
 	Session *sessionJSON `json:"session,omitempty"`
 }
@@ -149,6 +155,12 @@ type accountJSON struct {
 	// HasPassword is whether a password is set; PasswordChangedAt is when.
 	HasPassword       bool       `json:"has_password"`
 	PasswordChangedAt *time.Time `json:"password_changed_at"`
+}
+
+// mfaJSON describes two-step sign-in. It's on when TOTPEnabledAt is set.
+type mfaJSON struct {
+	TOTPEnabledAt     *time.Time `json:"totp_enabled_at"`
+	RecoveryCodesLeft int64      `json:"recovery_codes_left"`
 }
 
 type actorJSON struct {
@@ -292,6 +304,7 @@ func (s *Server) toMeResponse(me store.GetMeRow) meResponse {
 			ID: me.AccountID, Email: me.Email, EmailVerified: me.EmailVerifiedAt != nil, Status: me.Status,
 			HasPassword: me.HasPassword, PasswordChangedAt: me.PasswordChangedAt,
 		},
+		MFA:   mfaJSON{TOTPEnabledAt: me.TotpEnabledAt, RecoveryCodesLeft: me.RecoveryCodesLeft},
 		Actor: actorJSON{ID: me.ActorID, Handle: me.Handle, DisplayName: me.DisplayName, Avatar: []media.PublicVariant{}},
 	}
 	if s.media != nil && len(me.AvatarVariants) > 0 {
@@ -345,7 +358,12 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 
 func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	var verr *auth.ValidationError
+	var mfa *auth.MFARequiredError
 	switch {
+	case errors.As(err, &mfa):
+		writeJSON(w, http.StatusUnauthorized, errorBody{Error: errorDetail{
+			Code: "mfa_required", Message: mfa.Error(), MFAToken: mfa.Token,
+		}})
 	case errors.As(err, &verr):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: errorDetail{
 			Code: "validation_failed", Message: verr.Message, Field: verr.Field,
@@ -370,6 +388,14 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusUnauthorized, "email_code_required", err.Error())
 	case errors.Is(err, auth.ErrLastSignInMethod):
 		writeError(w, http.StatusConflict, "last_sign_in_method", err.Error())
+	case errors.Is(err, auth.ErrTOTPExists):
+		writeError(w, http.StatusConflict, "totp_exists", err.Error())
+	case errors.Is(err, auth.ErrTOTPNotSetUp):
+		writeError(w, http.StatusConflict, "totp_not_set_up", err.Error())
+	case errors.Is(err, auth.ErrTOTPCodeWrong), errors.Is(err, auth.ErrRecoveryCodeWrong):
+		writeError(w, http.StatusBadRequest, "code_invalid", err.Error())
+	case errors.Is(err, auth.ErrMFAExpired):
+		writeError(w, http.StatusBadRequest, "mfa_expired", err.Error())
 	case errors.Is(err, auth.ErrCodeInvalid):
 		writeError(w, http.StatusBadRequest, "code_invalid", auth.ErrCodeInvalid.Error())
 	case errors.Is(err, auth.ErrTooManyEmails):

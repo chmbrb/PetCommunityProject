@@ -39,6 +39,7 @@ provided() {
 echo "Secrets in $dir:"
 generate db_password
 generate secret_key
+generate mfa_key
 generate backup_key
 provided smtp_password "your email provider's SMTP password; may stay empty if it needs none"
 provided s3_access_key "your storage provider's access key ID"

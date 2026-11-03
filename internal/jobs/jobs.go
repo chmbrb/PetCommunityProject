@@ -66,7 +66,8 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 	return client, nil
 }
 
-// CleanupJob removes expired passkey challenges, email tokens, and known devices.
+// CleanupJob removes expired passkey challenges, email tokens, known devices, and
+// pending two-step sign-ins.
 type CleanupJob struct{}
 
 // Kind identifies the job type to River.
@@ -93,6 +94,11 @@ func (w *CleanupWorker) Work(ctx context.Context, _ *river.Job[CleanupJob]) erro
 	if err != nil {
 		return err
 	}
-	w.logger.InfoContext(ctx, "cleanup finished", "passkey_challenges", challenges, "email_tokens", tokens, "known_devices", devices)
+	mfa, err := w.db.DeleteExpiredMFAChallenges(ctx)
+	if err != nil {
+		return err
+	}
+	w.logger.InfoContext(ctx, "cleanup finished",
+		"passkey_challenges", challenges, "email_tokens", tokens, "known_devices", devices, "mfa_challenges", mfa)
 	return nil
 }

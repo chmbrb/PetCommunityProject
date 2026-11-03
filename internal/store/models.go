@@ -98,11 +98,28 @@ type MediaAsset struct {
 	ProcessedAt     *time.Time
 }
 
+type MfaChallenge struct {
+	ID        uuid.UUID
+	TokenHash []byte
+	AccountID uuid.UUID
+	Client    string
+	Attempts  int32
+	ExpiresAt time.Time
+}
+
 type PasskeyCredential struct {
 	IdentityID   uuid.UUID
 	CredentialID []byte
 	Credential   []byte
 	Name         string
+}
+
+type RecoveryCode struct {
+	ID        uuid.UUID
+	AccountID uuid.UUID
+	CodeHash  []byte
+	CreatedAt time.Time
+	UsedAt    *time.Time
 }
 
 type Session struct {
@@ -115,6 +132,16 @@ type Session struct {
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
 	UserAgent  string
+}
+
+type TotpFactor struct {
+	AccountID       uuid.UUID
+	SecretEncrypted []byte
+	KeyID           string
+	LastUsedStep    int64
+	ConfirmedAt     *time.Time
+	CreatedAt       time.Time
+	LastUsedAt      *time.Time
 }
 
 type WebauthnChallenge struct {

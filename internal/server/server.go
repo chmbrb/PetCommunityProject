@@ -51,10 +51,15 @@ func New(cfg config.Config, st Store, authSvc AuthService, mediaSvc MediaService
 	mux.HandleFunc("POST /api/v1/auth/login/email/request", s.handleSignInLinkRequest)
 	mux.HandleFunc("POST /api/v1/auth/login/email/finish", s.handleSignInLinkFinish)
 	mux.HandleFunc("POST /api/v1/auth/login/password", s.handlePasswordSignIn)
+	mux.HandleFunc("POST /api/v1/auth/login/mfa", s.handleFinishMFA)
 	mux.HandleFunc("POST /api/v1/auth/email/verify", s.handleVerifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/v1/me", s.handleMe)
 	mux.HandleFunc("POST /api/v1/me/email/verification", s.handleResendVerification)
+	mux.HandleFunc("POST /api/v1/me/totp/setup", s.handleTOTPSetup)
+	mux.HandleFunc("POST /api/v1/me/totp/confirm", s.handleTOTPConfirm)
+	mux.HandleFunc("DELETE /api/v1/me/totp", s.handleRemoveTOTP)
+	mux.HandleFunc("POST /api/v1/me/recovery-codes", s.handleRegenerateRecoveryCodes)
 	mux.HandleFunc("PUT /api/v1/me/password", s.handleSetPassword)
 	mux.HandleFunc("DELETE /api/v1/me/password", s.handleRemovePassword)
 	mux.HandleFunc("GET /api/v1/me/passkeys", s.handleListPasskeys)
@@ -137,6 +142,8 @@ type errorDetail struct {
 	Message string `json:"message"`
 	// Field names the invalid input field, when there is one.
 	Field string `json:"field,omitempty"`
+	// MFAToken continues a sign-in that needs its second step (code "mfa_required").
+	MFAToken string `json:"mfa_token,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

@@ -40,9 +40,11 @@ Status: **Draft (Phase 0)**. Covers the MVP (Phases 1–3) in detail. Later phas
 
 **AuthIdentity**: one sign-in method attached to an Account. `id`, `account_id`, `kind` (passkey / password / magic_link / oidc), `provider` (google / apple / other OIDC issuer; null for local methods), `subject` (provider's stable user ID; unique per provider), `email_at_link`, `credential_ref` (passkey public key etc.), `created_at`, `last_used_at`. An account must keep at least one. OIDC identities are matched by `provider` + `subject`, never by email.
 
-**TotpFactor**: an authenticator app or password manager entry used as a second factor (ADR 0014). `id`, `account_id`, `name`, `secret_encrypted` (AES-256-GCM under the API's MFA key), `key_id`, `last_used_step` (rejects replayed codes), `confirmed_at` (null until the first valid code), `created_at`, `last_used_at`. An account has MFA when it has a confirmed TotpFactor or a passkey.
+**TotpFactor**: an authenticator app or password manager entry used as a second factor (ADR 0014). One per account: `account_id`, `secret_encrypted` (AES-256-GCM under the API's MFA key, bound to the account), `key_id`, `last_used_step` (rejects replayed codes), `confirmed_at` (null until the first valid code), `created_at`, `last_used_at`. A confirmed TotpFactor turns on two-step sign-in. For role requirements, an account has MFA when it has a confirmed TotpFactor or a passkey.
 
 **RecoveryCode**: `id`, `account_id`, `code_hash`, `created_at`, `used_at`. Ten per set; generating a new set deletes the old one.
+
+**MfaChallenge**: a sign-in whose first step succeeded, waiting for its second. `id`, `token_hash` (the client holds the token), `account_id`, `client` (web / mobile), `attempts` (5 wrong codes end it), `expires_at` (5 minutes).
 
 **KnownDevice**: a browser or app install that has signed in to an account. `id`, `account_id`, `token_hash` (the token lives in a cookie or the app's storage), `created_at`, `last_used_at`, `expires_at` (a year after the last sign-in). A password sign-in from any other device needs an emailed code.
 

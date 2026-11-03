@@ -1,0 +1,7 @@
+Hi {{.DisplayName}},
+
+{{.Detail}} on your {{.InstanceName}} account.
+
+If this was you, there's nothing to do. If it wasn't, someone may have access to your account: sign in, check two-step sign-in, change your password if you have one, and sign out your other devices:
+
+{{.Link}}

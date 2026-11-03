@@ -72,6 +72,7 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 		WebAuthnRPID:    "localhost",
 		WebAuthnOrigins: []string{testOrigin},
 		PublicURL:       testOrigin,
+		MFAKey:          config.DevMFAKey,
 	}
 	for _, opt := range opts {
 		opt(&cfg)

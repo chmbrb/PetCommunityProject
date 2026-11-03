@@ -8,11 +8,13 @@ import {
   finishEmailSignIn,
   finishEmailSignup,
   finishLogin,
+  finishSecondStep,
   finishSignup,
   logout,
   passwordSignIn,
   type EmailProof,
   type Me,
+  type SecondStep,
   type SignupDetails,
 } from './api/client'
 
@@ -59,6 +61,11 @@ export function useSession() {
     me.value = await finishEmailSignup(proof, password)
   }
 
+  /** Finishes a sign-in that needed its second step. */
+  async function signInSecondStep(mfaToken: string, step: SecondStep) {
+    me.value = await finishSecondStep(mfaToken, step)
+  }
+
   /** Signs in with a password, and the emailed code on a new device. */
   async function signInWithPassword(email: string, password: string, code?: string) {
     me.value = await passwordSignIn(email, password, code)
@@ -74,5 +81,16 @@ export function useSession() {
     me.value = null
   }
 
-  return { me, loaded, signUp, signIn, signInWithEmail, signUpWithEmail, signInWithPassword, refresh, signOut }
+  return {
+    me,
+    loaded,
+    signUp,
+    signIn,
+    signInWithEmail,
+    signUpWithEmail,
+    signInWithPassword,
+    signInSecondStep,
+    refresh,
+    signOut,
+  }
 }

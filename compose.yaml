@@ -12,6 +12,34 @@
 # so `docker inspect`, crash reports and child processes can't leak them.
 name: petcommunity
 
+# Settings shared by the app, the worker, and migrations. Secrets that only one of them
+# needs are added in that service.
+x-app-env: &app-env
+  PC_ENV: production
+  PC_INSTANCE_NAME: ${PC_INSTANCE_NAME:?set PC_INSTANCE_NAME in .env}
+  PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
+  PC_SOURCE_URL: ${PC_SOURCE_URL:-https://github.com/chmbrb/PetCommunityProject}
+  PC_DATABASE_URL: postgres://petcommunity@db:5432/petcommunity
+  PC_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+  # The app is reachable only through Caddy, which sets X-Forwarded-For to the real
+  # client address, so rate limits can key on it.
+  PC_TRUST_PROXY: "true"
+  # Outgoing email through your provider's SMTP server (see .env.example).
+  PC_SMTP_HOST: ${PC_SMTP_HOST:?set PC_SMTP_HOST in .env}
+  PC_SMTP_PORT: ${PC_SMTP_PORT:-587}
+  PC_SMTP_SECURITY: ${PC_SMTP_SECURITY:-starttls}
+  PC_SMTP_USERNAME: ${PC_SMTP_USERNAME:-}
+  PC_MAIL_FROM: ${PC_MAIL_FROM:?set PC_MAIL_FROM in .env}
+  # Media storage (ADR 0010): see .env.example.
+  PC_S3_ENDPOINT: ${PC_S3_ENDPOINT:?set PC_S3_ENDPOINT in .env}
+  PC_S3_REGION: ${PC_S3_REGION:-us-east-1}
+  PC_S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+  PC_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+  PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
+  PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
+  PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
+  PC_BREACHED_PASSWORD_CHECK: ${PC_BREACHED_PASSWORD_CHECK:-true}
+
 services:
   caddy:
     build:
@@ -40,32 +68,11 @@ services:
       args:
         VERSION: ${PC_VERSION:-dev}
     image: petcommunity-app:local
-    environment: &app-env
-      PC_ENV: production
-      PC_INSTANCE_NAME: ${PC_INSTANCE_NAME:?set PC_INSTANCE_NAME in .env}
-      PC_INSTANCE_DOMAIN: ${PC_INSTANCE_DOMAIN:?set PC_INSTANCE_DOMAIN in .env}
-      PC_SOURCE_URL: ${PC_SOURCE_URL:-https://github.com/chmbrb/PetCommunityProject}
-      PC_DATABASE_URL: postgres://petcommunity@db:5432/petcommunity
-      PC_DATABASE_PASSWORD_FILE: /run/secrets/db_password
-      # The app is reachable only through Caddy, which sets X-Forwarded-For to the real
-      # client address, so rate limits can key on it.
-      PC_TRUST_PROXY: "true"
-      # Outgoing email through your provider's SMTP server (see .env.example).
-      PC_SMTP_HOST: ${PC_SMTP_HOST:?set PC_SMTP_HOST in .env}
-      PC_SMTP_PORT: ${PC_SMTP_PORT:-587}
-      PC_SMTP_SECURITY: ${PC_SMTP_SECURITY:-starttls}
-      PC_SMTP_USERNAME: ${PC_SMTP_USERNAME:-}
-      PC_MAIL_FROM: ${PC_MAIL_FROM:?set PC_MAIL_FROM in .env}
-      # Media storage (ADR 0010): see .env.example.
-      PC_S3_ENDPOINT: ${PC_S3_ENDPOINT:?set PC_S3_ENDPOINT in .env}
-      PC_S3_REGION: ${PC_S3_REGION:-us-east-1}
-      PC_S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
-      PC_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
-      PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
-      PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
-      PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
-      PC_BREACHED_PASSWORD_CHECK: ${PC_BREACHED_PASSWORD_CHECK:-true}
-    secrets: [db_password, s3_access_key, s3_secret_key]
+    environment:
+      <<: *app-env
+      # Encrypts TOTP secrets (ADR 0014). Only the API, which checks codes, gets it.
+      PC_MFA_KEY_FILE: /run/secrets/mfa_key
+    secrets: [db_password, s3_access_key, s3_secret_key, mfa_key]
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s
@@ -224,6 +231,8 @@ secrets:
     file: ${PC_SECRETS_DIR:-./secrets}/db_password
   secret_key:
     file: ${PC_SECRETS_DIR:-./secrets}/secret_key
+  mfa_key:
+    file: ${PC_SECRETS_DIR:-./secrets}/mfa_key
   backup_key:
     file: ${PC_SECRETS_DIR:-./secrets}/backup_key
   smtp_password:

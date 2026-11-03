@@ -236,11 +236,14 @@ func (q *Queries) GetActiveSession(ctx context.Context, tokenHash []byte) (GetAc
 const getMe = `-- name: GetMe :one
 SELECT a.id AS account_id, a.email, a.email_verified_at, a.status,
        (a.password_hash IS NOT NULL)::boolean AS has_password, a.password_changed_at,
+       t.confirmed_at AS totp_enabled_at,
+       (SELECT count(*) FROM recovery_codes rc WHERE rc.account_id = a.id AND rc.used_at IS NULL) AS recovery_codes_left,
        ac.id AS actor_id, ac.handle, ac.display_name,
        m.variants AS avatar_variants
 FROM accounts a
 JOIN actors ac ON ac.account_id = a.id
 LEFT JOIN media_assets m ON m.id = ac.avatar_media_id AND m.status = 'ready'
+LEFT JOIN totp_factors t ON t.account_id = a.id AND t.confirmed_at IS NOT NULL
 WHERE a.id = $1
 `
 
@@ -251,6 +254,8 @@ type GetMeRow struct {
 	Status            string
 	HasPassword       bool
 	PasswordChangedAt *time.Time
+	TotpEnabledAt     *time.Time
+	RecoveryCodesLeft int64
 	ActorID           uuid.UUID
 	Handle            string
 	DisplayName       string
@@ -267,6 +272,8 @@ func (q *Queries) GetMe(ctx context.Context, id uuid.UUID) (GetMeRow, error) {
 		&i.Status,
 		&i.HasPassword,
 		&i.PasswordChangedAt,
+		&i.TotpEnabledAt,
+		&i.RecoveryCodesLeft,
 		&i.ActorID,
 		&i.Handle,
 		&i.DisplayName,

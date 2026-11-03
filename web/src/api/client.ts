@@ -19,7 +19,7 @@ export interface InstanceInfo {
 
 /** Error shape returned by every API endpoint. */
 export interface ApiErrorBody {
-  error: { code: string; message: string; field?: string }
+  error: { code: string; message: string; field?: string; mfa_token?: string }
 }
 
 export class ApiError extends Error {
@@ -28,6 +28,8 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly field?: string,
+    /** With code "mfa_required": continues the sign-in at finishSecondStep. */
+    readonly mfaToken?: string,
   ) {
     // API messages are lowercase sentence fragments; capitalize them for display.
     super(message.charAt(0).toUpperCase() + message.slice(1))
@@ -55,7 +57,12 @@ export interface Me {
     password_changed_at: string | null
   }
   actor: { id: string; handle: string; display_name: string; avatar: ImageVariant[] }
+  /** Two-step sign-in: on when totp_enabled_at is set. */
+  mfa: { totp_enabled_at: string | null; recovery_codes_left: number }
 }
+
+/** The second step of a sign-in: a code from the authenticator app, or a recovery code. */
+export type SecondStep = { code: string } | { recovery_code: string }
 
 /** An uploaded image, as its owner sees it. */
 export interface MediaAsset {
@@ -124,15 +131,17 @@ async function request<T>(
     let code = 'http_error'
     let message = res.statusText
     let field: string | undefined
+    let mfaToken: string | undefined
     try {
       const err = ((await res.json()) as ApiErrorBody).error
       code = err.code
       message = err.message
       field = err.field
+      mfaToken = err.mfa_token
     } catch {
       // Not a JSON error body (e.g. a proxy error page); keep the HTTP status text.
     }
-    throw new ApiError(res.status, code, message, field)
+    throw new ApiError(res.status, code, message, field, mfaToken)
   }
   if (res.status === 204) {
     return undefined as T
@@ -217,6 +226,30 @@ export function setPassword(password: string) {
 
 export function removePassword() {
   return request<void>('DELETE', '/api/v1/me/password')
+}
+
+/** Finishes a sign-in that failed with "mfa_required". */
+export function finishSecondStep(mfaToken: string, step: SecondStep) {
+  return request<Me>('POST', '/api/v1/auth/login/mfa', { mfa_token: mfaToken, ...step })
+}
+
+/** Starts adding an authenticator app. Show the secret once; nothing is on yet. */
+export function beginTotpSetup() {
+  return request<{ secret: string; uri: string }>('POST', '/api/v1/me/totp/setup')
+}
+
+/** Turns on two-step sign-in with a code from the new authenticator. */
+export async function confirmTotp(code: string) {
+  return (await request<{ recovery_codes: string[] }>('POST', '/api/v1/me/totp/confirm', { code })).recovery_codes
+}
+
+export function removeTotp() {
+  return request<void>('DELETE', '/api/v1/me/totp')
+}
+
+/** Replaces the recovery codes; the old ones stop working. */
+export async function regenerateRecoveryCodes() {
+  return (await request<{ recovery_codes: string[] }>('POST', '/api/v1/me/recovery-codes')).recovery_codes
 }
 
 export function verifyEmail(token: string) {

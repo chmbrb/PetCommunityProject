@@ -37,6 +37,13 @@ var DevSecretKey = func() []byte {
 	return sum[:]
 }()
 
+// DevMFAKey is the fixed MFA key used in development when PC_MFA_KEY isn't set. It's
+// public, so production refuses it.
+var DevMFAKey = func() []byte {
+	sum := sha256.Sum256([]byte("PetCommunityProject development MFA key; never use in production"))
+	return sum[:]
+}()
+
 // DefaultSourceURL is where the unmodified source code lives. Operators running a
 // modified version must point PC_SOURCE_URL at their own source (AGPL section 13).
 const DefaultSourceURL = "https://github.com/chmbrb/PetCommunityProject"
@@ -77,6 +84,10 @@ type Config struct {
 	// (ADR 0012). Only the worker needs it; it's nil in production processes that
 	// weren't given it.
 	SecretKey []byte
+	// MFAKey (32 bytes, PC_MFA_KEY) encrypts TOTP secrets at rest (ADR 0014). Only the
+	// API, which checks codes, needs it; it's separate from SecretKey, which only the
+	// worker holds.
+	MFAKey []byte
 }
 
 // Storage configures S3-compatible object storage: a hosted provider in production,
@@ -104,6 +115,17 @@ func (c Config) RequireSecretKey() error {
 	}
 	if c.Env == Production && bytes.Equal(c.SecretKey, DevSecretKey) {
 		return errors.New("PC_SECRET_KEY is the public development key; generate a real one for production")
+	}
+	return nil
+}
+
+// RequireMFAKey reports whether a usable MFA key is configured, for the API.
+func (c Config) RequireMFAKey() error {
+	if len(c.MFAKey) == 0 {
+		return errors.New("PC_MFA_KEY is required; generate one with `openssl rand -base64 32` (or `make secrets`)")
+	}
+	if c.Env == Production && bytes.Equal(c.MFAKey, DevMFAKey) {
+		return errors.New("PC_MFA_KEY is the public development key; generate a real one for production")
 	}
 	return nil
 }
@@ -167,8 +189,8 @@ func DefaultRateLimits() RateLimits {
 
 // Load reads configuration using getenv (normally os.Getenv) and validates it.
 //
-// Secrets (PC_DATABASE_PASSWORD, PC_SECRET_KEY, PC_SMTP_PASSWORD, PC_S3_ACCESS_KEY,
-// PC_S3_SECRET_KEY) can instead be read from a file named by the same variable with a
+// Secrets (PC_DATABASE_PASSWORD, PC_SECRET_KEY, PC_MFA_KEY, PC_SMTP_PASSWORD,
+// PC_S3_ACCESS_KEY, PC_S3_SECRET_KEY) can instead be read from a file named by the same variable with a
 // _FILE suffix, such as a Compose secret mounted under /run/secrets. Production uses
 // files, which keeps secrets out of the environment, where they leak into `docker
 // inspect`, crash reports and child processes.
@@ -217,6 +239,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Mail.CAFile = getenv("PC_SMTP_CA_FILE")
 	if cfg.Env != Production {
 		cfg.SecretKey = DevSecretKey
+		cfg.MFAKey = DevMFAKey
 	}
 	cfg.Storage = storageDefaults(cfg.Env)
 	cfg.Storage.Endpoint = valueOr(getenv("PC_S3_ENDPOINT"), cfg.Storage.Endpoint)
@@ -241,11 +264,18 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 	if v := readSecret("PC_SECRET_KEY"); v != "" {
-		key, err := decodeSecretKey(v)
+		key, err := decodeSecretKey("PC_SECRET_KEY", v)
 		if err != nil {
 			parseErrs = append(parseErrs, err)
 		}
 		cfg.SecretKey = key
+	}
+	if v := readSecret("PC_MFA_KEY"); v != "" {
+		key, err := decodeSecretKey("PC_MFA_KEY", v)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		cfg.MFAKey = key
 	}
 	if v := getenv("PC_SMTP_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
@@ -390,17 +420,17 @@ func withPassword(databaseURL, password string) (string, error) {
 }
 
 // decodeSecretKey accepts a 32-byte key in standard or URL-safe base64, padded or not.
-func decodeSecretKey(v string) ([]byte, error) {
+func decodeSecretKey(name, v string) ([]byte, error) {
 	v = strings.TrimSpace(v)
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 		if key, err := enc.DecodeString(v); err == nil {
 			if len(key) != 32 {
-				return nil, fmt.Errorf("PC_SECRET_KEY must be 32 bytes, got %d; generate one with `openssl rand -base64 32`", len(key))
+				return nil, fmt.Errorf("%s must be 32 bytes, got %d; generate one with `openssl rand -base64 32`", name, len(key))
 			}
 			return key, nil
 		}
 	}
-	return nil, errors.New("PC_SECRET_KEY must be base64; generate one with `openssl rand -base64 32`")
+	return nil, fmt.Errorf("%s must be base64; generate one with `openssl rand -base64 32`", name)
 }
 
 // publicURLDefault is the instance's site in production, and the Vite dev server in

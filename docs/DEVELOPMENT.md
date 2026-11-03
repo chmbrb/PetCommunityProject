@@ -223,6 +223,12 @@ Passwords are optional (ADR 0014). New ones are checked against known data breac
 
 A password sign-in from a browser or app that hasn't signed in to the account before also needs a code emailed to the account. Browsers are recognized by the `pc_device` cookie (`__Host-pc_device` in production), the apps by the `device_token` returned at sign-in and sent back in the `X-Device-Token` header.
 
+### Two-step sign-in
+
+People can turn on two-step sign-in in Settings with any authenticator app or password manager (TOTP, ADR 0014). Email and password sign-ins then need a code from it, a recovery code, or a passkey. The API encrypts authenticator secrets with `mfa_key` (`PC_MFA_KEY_FILE`), which `make secrets` generates and only the `app` container gets. **Keep an offline copy of `mfa_key`** with the other keys: without it, nobody can finish a two-step sign-in except with a recovery code. Development uses a fixed, public key when `PC_MFA_KEY` isn't set; production refuses it.
+
+To try it in development, add the setup key to any authenticator app, or generate codes with `oathtool --totp -b <setup key>`.
+
 ### Rate limits
 
 The API limits requests per client IP address (IPv6 clients are grouped by /64 network). Defaults are in `config.DefaultRateLimits`:
@@ -241,13 +247,18 @@ The client IP comes from the TCP connection, or from `X-Forwarded-For` when `PC_
 
 ## Podman
 
-Docker Compose works with Podman through Podman's API socket:
+Docker Compose works with rootless Podman through Podman's API socket. Set it up once:
 
 ```sh
-systemctl --user enable --now podman.socket
-export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
-make dev-up
+systemctl --user enable --now podman.socket   # starts at every login from now on
+docker context create podman --docker host=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+docker context use podman
+docker version                                # Server should say "Podman Engine"
 ```
+
+The context is remembered, so `make dev-up`, `make local-up`, and other `docker` commands use Podman in every shell. (Setting `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` works too, and takes precedence over the context.)
+
+**Don't run `make` or `docker` with `sudo`.** If Docker Engine is also installed, plain `docker` commands go to its root daemon (`/var/run/docker.sock`), and fail with "permission denied" for users outside the `docker` group. Running them with `sudo` then starts the stacks as root: files the containers write, such as `.local-backups/`, end up owned by system users, and rootless Podman can't read them afterwards. If that happens, check `docker context show` (it should print `podman`), remove the root stack and its data with `sudo make local-reset` (under `sudo`, `docker` uses root's settings, so this reaches the root daemon), and delete the root-owned folder with `sudo rm -rf .local-backups`; it only holds the local stack's throwaway backups. If you don't use Docker Engine otherwise, `sudo systemctl disable --now docker docker.socket` avoids the mix-up.
 
 Rootless Podman can't bind ports 80 and 443, which the production `compose.yaml` uses; `make local-up` maps Caddy to 8443 instead.
 

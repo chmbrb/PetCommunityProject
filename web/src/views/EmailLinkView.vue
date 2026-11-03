@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError } from '../api/client'
 import PasswordField from '../components/PasswordField.vue'
+import SecondStepForm from '../components/SecondStepForm.vue'
 import { takeLinkToken } from '../linkToken'
 import { useSession } from '../useSession'
 
@@ -35,6 +36,8 @@ const text = computed(() =>
 const token = takeLinkToken()
 const error = ref<string | null>(token ? null : 'This link is incomplete. Please request a new email.')
 const busy = ref(false)
+// Set when the account uses two-step sign-in and the link was the first step.
+const mfaToken = ref<string | null>(null)
 // Sign-up only: an optional password.
 const password = ref('')
 const passwordError = ref<string | null>(null)
@@ -52,7 +55,9 @@ async function finish() {
       : signInWithEmail({ token }))
     await router.replace({ name: 'home' })
   } catch (err) {
-    if (err instanceof ApiError && err.field === 'password') {
+    if (err instanceof ApiError && err.code === 'mfa_required' && err.mfaToken) {
+      mfaToken.value = err.mfaToken
+    } else if (err instanceof ApiError && err.field === 'password') {
       passwordError.value = err.message
     } else {
       error.value = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'
@@ -81,7 +86,14 @@ async function finish() {
       {{ error }}
     </v-alert>
 
-    <template v-if="token">
+    <SecondStepForm
+      v-if="mfaToken"
+      :mfa-token="mfaToken"
+      @done="router.replace({ name: 'home' })"
+      @restart="router.replace({ name: text.retryRoute })"
+    />
+
+    <template v-else-if="token">
       <p class="text-body-1 mb-6">
         {{ text.intro }}
       </p>
