@@ -28,7 +28,7 @@ services:
   # MinIO for local development only (ADR 0010). The upstream community images are no
   # longer published, so this uses Chainguard's maintained build, pinned by digest.
   minio:
-    image: cgr.dev/chainguard/minio@sha256:e234321fd3abff7fb968b0674056e883b702aa1ad93a0d4d795cb6c21fa46407
+    image: cgr.dev/chainguard/minio@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: petcommunity
@@ -41,7 +41,7 @@ services:
 
   # Creates the media and quarantine buckets, retrying until MinIO is up.
   minio-init:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:ac75abc3947742b7d5d11e145eb0759c5b59ae697956fda325e91f6fd742b005
     depends_on:
       - minio
     environment:
@@ -52,7 +52,7 @@ services:
   # Makes processed images publicly readable, as a hosted provider's public bucket
   # would be. The quarantine bucket stays private.
   minio-policy:
-    image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
+    image: cgr.dev/chainguard/minio-client@sha256:ac75abc3947742b7d5d11e145eb0759c5b59ae697956fda325e91f6fd742b005
     depends_on:
       minio-init:
         condition: service_completed_successfully
