@@ -60,7 +60,7 @@ RUN case "$TARGETARCH" in \
 # --target db: the database. PostGIS plus Debian security fixes released since the
 # upstream image was built. The backup image builds on it, so the database and backups
 # always run the exact same Postgres build (which physical backups require).
-FROM docker.io/postgis/postgis:18-3.6 AS db
+FROM docker.io/postgis/postgis:18-3.7 AS db
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
