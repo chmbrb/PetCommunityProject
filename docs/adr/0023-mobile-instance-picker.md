@@ -1,6 +1,6 @@
 # 0023. Mobile instance picker and app sessions
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-15
 - **Details:** the "instance picker" in [0018](0018-mobile-apps-capacitor.md) and the mobile tokens in [0014](0014-authentication-sessions-mfa.md). Both stand.
 - **Related:** PLAN.md Phase 1 (mobile shell); [0017](0017-instance-feature-flags.md), [0019](0019-sign-in-options-passkeys-sso.md); THREAT_MODEL.md M4, S1
