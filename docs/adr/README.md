@@ -29,7 +29,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0019](0019-sign-in-options-passkeys-sso.md) | Sign-in options: passkeys, magic links, and Google/Apple SSO | Accepted |
 | [0020](0020-shelter-software-imports.md) | Shelter software imports (Shelterluv and PetPoint) | Accepted |
 | [0021](0021-memory-safe-image-codecs.md) | Memory-safe image codecs (pure Go and WebAssembly) | Accepted |
-| [0022](0022-abuse-imagery-scanning-and-evidence.md) | Abuse imagery scanning and evidence preservation | Proposed |
+| [0022](0022-abuse-imagery-scanning-and-evidence.md) | Abuse imagery scanning and evidence preservation | Accepted |
 
 ## Writing a new ADR
 
