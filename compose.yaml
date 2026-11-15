@@ -37,6 +37,7 @@ x-app-env: &app-env
   PC_S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
   PC_S3_QUARANTINE_BUCKET: ${PC_S3_QUARANTINE_BUCKET:-quarantine}
   PC_S3_MEDIA_BUCKET: ${PC_S3_MEDIA_BUCKET:-media}
+  PC_S3_EVIDENCE_BUCKET: ${PC_S3_EVIDENCE_BUCKET:-evidence}
   PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
   PC_BREACHED_PASSWORD_CHECK: ${PC_BREACHED_PASSWORD_CHECK:-true}
 
@@ -95,7 +96,13 @@ services:
       PC_SECRET_KEY_FILE: /run/secrets/secret_key
       # Only the worker sends email.
       PC_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+      # Checks uploads for known abuse imagery (ADR 0022); see .env.example.
+      PC_ABUSE_SCANNER: ${PC_ABUSE_SCANNER:-none}
+      PC_ABUSE_HASH_LIST_FILE: ${PC_ABUSE_HASH_LIST_FILE:-}
     secrets: [db_password, s3_access_key, s3_secret_key, secret_key, smtp_password]
+    volumes:
+      # Hash lists for PC_ABUSE_SCANNER=hashlist, at /run/hash-lists/<file>.
+      - ${PC_ABUSE_HASH_LIST_DIR:-./hash-lists}:/run/hash-lists:ro,z
     read_only: true
     # Decoding large photos is memory-hungry; contain it (ADR 0011).
     mem_limit: 1g

@@ -1,6 +1,6 @@
 # 0011. Media processing pipeline
 
-- **Status:** Accepted; the libvips codec choice is superseded by [0021](0021-memory-safe-image-codecs.md)
+- **Status:** Accepted; the libvips codec choice is superseded by [0021](0021-memory-safe-image-codecs.md), and the CSAM check is detailed in [0022](0022-abuse-imagery-scanning-and-evidence.md)
 - **Date:** 2026-10-29
 - **Related:** [0006](0006-postgres-job-queue-river.md), [0010](0010-s3-compatible-media-storage.md), THREAT_MODEL.md P1, C1, C2, A2, D1
 

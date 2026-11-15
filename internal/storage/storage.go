@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package storage stores media in S3-compatible object storage (ADR 0010): a private
-// quarantine bucket for raw uploads and a public bucket for processed images.
+// quarantine bucket for raw uploads, a public bucket for processed images, and a
+// private evidence bucket for uploads that matched known abuse imagery (ADR 0022).
 package storage
 
 import (
@@ -40,7 +41,10 @@ type Storage struct {
 	// Quarantine holds raw, unprocessed uploads. It's never publicly readable.
 	Quarantine Bucket
 	// Media holds processed images, publicly readable at MediaURL.
-	Media    Bucket
+	Media Bucket
+	// Evidence holds encrypted originals of uploads that matched known abuse imagery,
+	// kept for the legally required report. Never public, and never expired.
+	Evidence Bucket
 	mediaURL string
 }
 
@@ -66,6 +70,7 @@ func NewS3(cfg config.Storage) (*Storage, error) {
 	return &Storage{
 		Quarantine: &s3Bucket{client: client, name: cfg.QuarantineBucket},
 		Media:      &s3Bucket{client: client, name: cfg.MediaBucket},
+		Evidence:   &s3Bucket{client: client, name: cfg.EvidenceBucket},
 		mediaURL:   cfg.MediaURL,
 	}, nil
 }
@@ -110,7 +115,7 @@ func (b *s3Bucket) Delete(ctx context.Context, key string) error {
 
 // NewMemory returns storage kept in memory, for tests.
 func NewMemory(mediaURL string) *Storage {
-	return &Storage{Quarantine: &MemoryBucket{}, Media: &MemoryBucket{}, mediaURL: mediaURL}
+	return &Storage{Quarantine: &MemoryBucket{}, Media: &MemoryBucket{}, Evidence: &MemoryBucket{}, mediaURL: mediaURL}
 }
 
 // MemoryBucket is an in-memory Bucket for tests.

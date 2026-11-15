@@ -39,14 +39,14 @@ services:
     volumes:
       - minio-data:/data
 
-  # Creates the media and quarantine buckets, retrying until MinIO is up.
+  # Creates the media, quarantine, and evidence buckets, retrying until MinIO is up.
   minio-init:
     image: cgr.dev/chainguard/minio-client@sha256:72d358e57e6e584e80a3497d2bac32d3114da1d6d87232174084d8561b64b686
     depends_on:
       - minio
     environment:
       MC_HOST_local: http://petcommunity:dev-only-password@minio:9000
-    command: ["mb", "--ignore-existing", "local/media", "local/quarantine"]
+    command: ["mb", "--ignore-existing", "local/media", "local/quarantine", "local/evidence"]
     restart: on-failure
 
   # Makes processed images publicly readable, as a hosted provider's public bucket

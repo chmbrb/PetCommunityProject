@@ -10,6 +10,22 @@ import (
 	"github.com/google/uuid"
 )
 
+type AbuseImageryCase struct {
+	ID              uuid.UUID
+	MediaID         uuid.UUID
+	OwnerActorID    uuid.UUID
+	AccountID       uuid.NullUUID
+	Scanner         string
+	MatchReference  *string
+	Sha256          []byte
+	EvidenceKey     string
+	Status          string
+	ReportReference *string
+	ReportedAt      *time.Time
+	PreserveUntil   *time.Time
+	CreatedAt       time.Time
+}
+
 type Account struct {
 	ID                     uuid.UUID
 	Email                  string
@@ -37,6 +53,16 @@ type Actor struct {
 	PrivateKeyKid *string
 	KeysCreatedAt *time.Time
 	AvatarMediaID uuid.NullUUID
+}
+
+type AuditLog struct {
+	ID         uuid.UUID
+	OccurredAt time.Time
+	AccountID  uuid.NullUUID
+	Action     string
+	TargetType string
+	TargetID   uuid.UUID
+	Details    []byte
 }
 
 type AuthIdentity struct {

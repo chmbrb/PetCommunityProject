@@ -5,6 +5,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,22 +83,34 @@ type storedVariant struct {
 
 // Service accepts uploads (API) and processes them (worker).
 type Service struct {
-	db      *database.Store
-	storage *storage.Storage
-	queue   JobQueue
-	scanner Scanner
-	logger  *slog.Logger
+	db       *database.Store
+	storage  *storage.Storage
+	queue    JobQueue
+	scanning Scanning
+	logger   *slog.Logger
 }
 
-// NewService returns a media service. The API needs queue; the worker needs scanner.
-func NewService(db *database.Store, st *storage.Storage, queue JobQueue, scanner Scanner, logger *slog.Logger) *Service {
-	if scanner == nil {
-		scanner = NoScanner{}
+// Scanning is what the worker needs to check uploads for known abuse imagery and to
+// preserve the evidence when one matches (ADR 0022).
+type Scanning struct {
+	// Scanner checks each upload. Nil means NoScanner.
+	Scanner Scanner
+	// Evidence encrypts the originals of matching uploads. Required with any Scanner
+	// other than NoScanner.
+	Evidence *EvidenceSealer
+}
+
+// NewService returns a media service. The API needs queue; the worker needs scanning.
+func NewService(db *database.Store, st *storage.Storage, queue JobQueue, scanning Scanning, logger *slog.Logger) *Service {
+	if scanning.Scanner == nil {
+		scanning.Scanner = NoScanner{}
 	}
-	return &Service{db: db, storage: st, queue: queue, scanner: scanner, logger: logger}
+	return &Service{db: db, storage: st, queue: queue, scanning: scanning, logger: logger}
 }
 
 func quarantineKey(id uuid.UUID) string { return "uploads/" + id.String() }
+
+func evidenceKey(id uuid.UUID) string { return "media/" + id.String() }
 
 // Upload stores a raw upload in quarantine and queues it for processing. Only the
 // format sniff happens here; everything else is the worker's job, away from the API.
@@ -238,20 +251,16 @@ func (s *Service) Process(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 
-	verdict, err := s.scanner.Scan(ctx, data)
+	// A scanner error retries the job; if it never succeeds, the upload is rejected by
+	// CleanupStale. Nothing is published unscanned when a scanner is configured.
+	scan, err := s.scanning.Scanner.Scan(ctx, data)
 	if err != nil {
 		return fmt.Errorf("scan upload: %w", err)
 	}
-	if verdict == Match {
-		// Never published or viewed; the original stays in quarantine as evidence for
-		// the legally required report (THREAT_MODEL.md C1). No content is logged.
-		if _, err := s.db.MarkMediaQuarantined(ctx, id); err != nil {
-			return err
-		}
-		s.logger.ErrorContext(ctx, "upload matched known abuse imagery; quarantined for reporting",
-			"media_id", id, "owner_actor_id", row.OwnerActorID)
-		return nil
+	if scan.Verdict == Match {
+		return s.preserveMatch(ctx, row.OwnerActorID, id, data, scan)
 	}
+	verdict := scan.Verdict
 
 	res, err := Process(data)
 	if errors.Is(err, ErrUnsupported) || errors.Is(err, ErrTooLarge) || errors.Is(err, ErrUndecodable) {
@@ -301,6 +310,93 @@ func (s *Service) Process(ctx context.Context, id uuid.UUID) error {
 	}
 	s.logger.InfoContext(ctx, "upload processed", "media_id", id, "variants", len(stored))
 	return nil
+}
+
+// preserveMatch handles an upload that matched known abuse imagery (ADR 0022). The
+// original is never decoded, published, or viewed: it's encrypted into the evidence
+// bucket, and in one transaction the upload is quarantined, a case is opened for the
+// legally required report, the owner's account is suspended and signed out, and
+// each step is recorded in the audit log. Image content is never logged.
+func (s *Service) preserveMatch(ctx context.Context, ownerActorID, id uuid.UUID, original []byte, scan ScanResult) error {
+	if s.scanning.Evidence == nil || s.storage.Evidence == nil {
+		return errors.New("an upload matched known abuse imagery, but no evidence storage is configured")
+	}
+	sealed, err := s.scanning.Evidence.Seal(id, original)
+	if err != nil {
+		return err
+	}
+	// Stored under the upload's ID, so a retried job overwrites rather than duplicates.
+	key := evidenceKey(id)
+	if err := s.storage.Evidence.Put(ctx, key, bytes.NewReader(sealed), int64(len(sealed)),
+		storage.PutOptions{ContentType: "application/octet-stream"}); err != nil {
+		return fmt.Errorf("preserve evidence: %w", err)
+	}
+
+	sum := sha256.Sum256(original)
+	caseID := uuid.Must(uuid.NewV7())
+	var accountID uuid.NullUUID
+	err = s.db.InTx(ctx, func(_ pgx.Tx, q *store.Queries) error {
+		if accountID, err = q.GetActorAccountID(ctx, ownerActorID); err != nil {
+			return err
+		}
+		var ref *string
+		if scan.Reference != "" {
+			ref = &scan.Reference
+		}
+		created, err := q.CreateAbuseImageryCase(ctx, store.CreateAbuseImageryCaseParams{
+			ID: caseID, MediaID: id, OwnerActorID: ownerActorID, AccountID: accountID,
+			Scanner: s.scanning.Scanner.Name(), MatchReference: ref, Sha256: sum[:], EvidenceKey: key,
+		})
+		if err != nil {
+			return err
+		}
+		if created == 0 {
+			return nil // an earlier attempt already did all of this
+		}
+		if _, err := q.MarkMediaQuarantined(ctx, id); err != nil {
+			return err
+		}
+		if err := audit(ctx, q, "abuse_imagery.matched", "media", id, map[string]any{
+			"case_id": caseID, "scanner": s.scanning.Scanner.Name(), "owner_actor_id": ownerActorID,
+		}); err != nil {
+			return err
+		}
+		if !accountID.Valid {
+			return nil
+		}
+		if _, err := q.SuspendAccount(ctx, accountID.UUID); err != nil {
+			return err
+		}
+		revoked, err := q.RevokeAllAccountSessions(ctx, accountID.UUID)
+		if err != nil {
+			return err
+		}
+		return audit(ctx, q, "account.suspended", "account", accountID.UUID, map[string]any{
+			"reason": "abuse_imagery_match", "case_id": caseID, "sessions_revoked": revoked,
+		})
+	})
+	if err != nil {
+		return err
+	}
+	// The only copy left is the encrypted one; the raw file would otherwise wait for
+	// the quarantine bucket's lifecycle rule.
+	if err := s.storage.Quarantine.Delete(ctx, quarantineKey(id)); err != nil {
+		s.logger.WarnContext(ctx, "delete matched upload from quarantine", "media_id", id, "error", err)
+	}
+	s.logger.ErrorContext(ctx, "upload matched known abuse imagery; evidence preserved and account suspended for reporting",
+		"media_id", id, "owner_actor_id", ownerActorID, "account_id", accountID.UUID)
+	return nil
+}
+
+// audit appends an event done by the system (not by a signed-in account) to the audit log.
+func audit(ctx context.Context, q *store.Queries, action, targetType string, targetID uuid.UUID, details map[string]any) error {
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	return q.InsertAuditEvent(ctx, store.InsertAuditEventParams{
+		ID: uuid.Must(uuid.NewV7()), Action: action, TargetType: targetType, TargetID: targetID, Details: raw,
+	})
 }
 
 // CleanupStale rejects uploads still pending after an hour (their job failed for
