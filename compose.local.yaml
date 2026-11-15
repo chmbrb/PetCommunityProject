@@ -65,7 +65,7 @@ services:
     depends_on: [minio]
     environment:
       MC_HOST_local: http://${LOCAL_MINIO_USER}:${LOCAL_MINIO_PASSWORD}@minio:9000
-    command: ["mb", "--ignore-existing", "local/media", "local/quarantine"]
+    command: ["mb", "--ignore-existing", "local/media", "local/quarantine", "local/evidence"]
     networks: [edge]
     restart: on-failure
 

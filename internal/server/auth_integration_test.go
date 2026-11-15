@@ -88,7 +88,15 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 		t.Fatalf("auth.New: %v", err)
 	}
 	objects := storage.NewMemory("https://media.test")
-	mediaSvc := media.NewService(st, objects, queue, media.NoScanner{}, logger)
+	scanner, err := media.NewScanner(cfg.AbuseScan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := media.NewEvidenceSealer(config.DevSecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaSvc := media.NewService(st, objects, queue, media.Scanning{Scanner: scanner, Evidence: evidence}, logger)
 	srv := httptest.NewServer(New(cfg, st, authSvc, mediaSvc, logger))
 	t.Cleanup(srv.Close)
 

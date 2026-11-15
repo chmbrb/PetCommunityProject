@@ -4,6 +4,8 @@
 !/secrets/README.md
 /deploy/local/certs/
 /.local-backups/
+# Abuse imagery hash lists (ADR 0022); shared with providers under their terms, not published.
+/hash-lists/
 *.local
 
 # Build output

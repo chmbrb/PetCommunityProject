@@ -152,7 +152,9 @@ Uploads go to a private quarantine bucket; the worker decodes and re-encodes the
 
 The image codecs must use their memory-safe Go builds: always build with `-tags nodynamic`. The Makefile, Dockerfile, CI, and golangci-lint do this; when running `go` directly, use `GOFLAGS=-tags=nodynamic`. Without the tag, a machine with libwebp, libavif, or libheif development files installed would decode uploads with C code, and the worker refuses to start.
 
-No abuse-imagery scanning service is connected yet (ADR 0011), so only accounts with a confirmed email can upload. In development, MinIO serves images at http://localhost:9000/media/, and the local production stack serves them through Caddy at https://localhost:8443/media/.
+Uploads are checked against known abuse imagery before anything else happens (ADR 0022). `PC_ABUSE_SCANNER` chooses the scanner: `none` (the default), or `hashlist` with `PC_ABUSE_HASH_LIST_FILE` naming a file of MD5, SHA-1, or SHA-256 hex digests, one per line. No perceptual provider is connected yet, so only accounts with a confirmed email can upload. On a match, the original is encrypted with `PC_SECRET_KEY` into the evidence bucket (`PC_S3_EVIDENCE_BUCKET`, required once a scanner is set: private, with nothing that expires its objects), a row is added to `abuse_imagery_cases`, and the uploader's account is suspended and signed out. To try it in development, put the SHA-256 of a test image (`sha256sum photo.jpg`) in a file and run the worker with `PC_ABUSE_SCANNER=hashlist PC_ABUSE_HASH_LIST_FILE=<file>`.
+
+In development, MinIO serves images at http://localhost:9000/media/, and the local production stack serves them through Caddy at https://localhost:8443/media/.
 
 ### Backups
 

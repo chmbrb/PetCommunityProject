@@ -55,7 +55,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Until an abuse-imagery scanning service is set up (ADR 0011), only accounts
+	// Until an abuse-imagery scanning service is set up (ADR 0022), only accounts
 	// with a confirmed email can upload.
 	me, err := s.auth.Me(r.Context(), p.AccountID)
 	if err != nil {

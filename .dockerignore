@@ -8,9 +8,11 @@ web/android
 web/ios
 *.env
 .env
-# Never sent to the image build: secrets, local certificates, and local backups (which
-# also belong to the backup container's user, so the build can't read them anyway).
+# Never sent to the image build: secrets, local certificates, local backups (which
+# also belong to the backup container's user, so the build can't read them anyway),
+# and abuse imagery hash lists.
 secrets
 deploy/local/secrets
 deploy/local/certs
 .local-backups
+hash-lists
