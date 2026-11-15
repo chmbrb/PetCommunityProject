@@ -30,6 +30,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0020](0020-shelter-software-imports.md) | Shelter software imports (Shelterluv and PetPoint) | Accepted |
 | [0021](0021-memory-safe-image-codecs.md) | Memory-safe image codecs (pure Go and WebAssembly) | Accepted |
 | [0022](0022-abuse-imagery-scanning-and-evidence.md) | Abuse imagery scanning and evidence preservation | Accepted |
+| [0023](0023-mobile-instance-picker.md) | Mobile instance picker and app sessions | Proposed |
 
 ## Writing a new ADR
 
