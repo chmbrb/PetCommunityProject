@@ -4,7 +4,7 @@ Short records of significant technical decisions: the context, what was decided,
 
 **Status values:** `Proposed` (recommended, awaiting confirmation) · `Accepted` · `Superseded by NNNN` · `Deprecated`
 
-Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accepted`. Implementation choices recommended during planning were `Proposed` until the owner confirmed them; all current ADRs are `Accepted`.
+Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accepted`. Other ADRs start as `Proposed` and become `Accepted` once the owner confirms them.
 
 | # | Title | Status |
 |---|-------|--------|
@@ -30,6 +30,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0020](0020-shelter-software-imports.md) | Shelter software imports (Shelterluv and PetPoint) | Accepted |
 | [0021](0021-memory-safe-image-codecs.md) | Memory-safe image codecs (pure Go and WebAssembly) | Accepted |
 | [0022](0022-abuse-imagery-scanning-and-evidence.md) | Abuse imagery scanning and evidence preservation | Accepted |
+| [0023](0023-mobile-instance-picker.md) | Mobile instance picker and app sessions | Accepted |
 
 ## Writing a new ADR
 
