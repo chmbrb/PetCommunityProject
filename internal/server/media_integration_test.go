@@ -6,17 +6,23 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
+	"github.com/chmbrb/PetCommunityProject/internal/config"
+	"github.com/chmbrb/PetCommunityProject/internal/media"
 	"github.com/chmbrb/PetCommunityProject/internal/storage"
 )
 
@@ -239,5 +245,108 @@ func TestSamePhotoFromAnotherAccountIsFlagged(t *testing.T) {
 	_, asset := e.do(mallory, "GET", "/api/v1/media/"+second, nil, nil)
 	if asset["status"] != "ready" {
 		t.Errorf("flagged upload status = %v, want ready", asset["status"])
+	}
+}
+
+func TestAbuseImageryMatchIsPreservedAndSuspendsTheAccount(t *testing.T) {
+	known := photo(t, 99)
+	sum := sha256.Sum256(known)
+	list := filepath.Join(t.TempDir(), "hashes.txt")
+	if err := os.WriteFile(list, []byte(hex.EncodeToString(sum[:])+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := newAuthTestEnv(t, func(c *config.Config) {
+		c.AbuseScan = config.AbuseScan{Scanner: config.ScannerHashList, HashListFile: list}
+	})
+	ctx := context.Background()
+
+	uploader := e.newClient()
+	pk := e.verifiedUser(uploader)
+	_, body := e.upload(uploader, known)
+	id := body["id"].(string)
+	e.process(id)
+
+	// Nothing published, and the raw file is gone from quarantine.
+	if n := len(e.objects.Media.(*storage.MemoryBucket).Objects()); n != 0 {
+		t.Errorf("published objects = %d, want 0", n)
+	}
+	if _, ok := e.objects.Quarantine.(*storage.MemoryBucket).Objects()["uploads/"+id]; ok {
+		t.Error("matched upload left unencrypted in quarantine")
+	}
+
+	// The evidence is kept, encrypted and bound to the upload.
+	obj, ok := e.objects.Evidence.(*storage.MemoryBucket).Objects()["media/"+id]
+	if !ok {
+		t.Fatal("no evidence preserved")
+	}
+	if bytes.Contains(obj.Data, known[len(known)-100:]) {
+		t.Error("evidence is stored unencrypted")
+	}
+	sealer, _ := media.NewEvidenceSealer(config.DevSecretKey)
+	if original, err := sealer.Open(mustUUID(t, id), obj.Data); err != nil || !bytes.Equal(original, known) {
+		t.Errorf("evidence doesn't decrypt to the original: %v", err)
+	}
+
+	// A case is open for the report, with the match recorded.
+	var status, scanner, ref, evidenceKey string
+	var caseSum []byte
+	err := e.pool.QueryRow(ctx, `SELECT c.status, c.scanner, c.match_reference, c.sha256, c.evidence_key
+		FROM abuse_imagery_cases c WHERE c.media_id = $1 AND c.account_id = $2`, id, pk.accountID).
+		Scan(&status, &scanner, &ref, &caseSum, &evidenceKey)
+	if err != nil {
+		t.Fatalf("case: %v", err)
+	}
+	if status != "open" || scanner != config.ScannerHashList || ref != "sha256:"+hex.EncodeToString(sum[:]) ||
+		!bytes.Equal(caseSum, sum[:]) || evidenceKey != "media/"+id {
+		t.Errorf("case = %s %s %s %x %s", status, scanner, ref, caseSum, evidenceKey)
+	}
+	var mediaStatus string
+	_ = e.pool.QueryRow(ctx, `SELECT status FROM media_assets WHERE id = $1`, id).Scan(&mediaStatus)
+	if mediaStatus != "quarantined" {
+		t.Errorf("upload status = %q, want quarantined", mediaStatus)
+	}
+
+	// The account is suspended and signed out everywhere, and both steps are audited.
+	var accountStatus string
+	_ = e.pool.QueryRow(ctx, `SELECT status FROM accounts WHERE id = $1`, pk.accountID).Scan(&accountStatus)
+	if accountStatus != "suspended" {
+		t.Errorf("account status = %q, want suspended", accountStatus)
+	}
+	if status, _ := e.do(uploader, "GET", "/api/v1/me", nil, nil); status != http.StatusUnauthorized {
+		t.Errorf("suspended account's session: status %d, want 401", status)
+	}
+	var actions []string
+	rows, _ := e.pool.Query(ctx, `SELECT action FROM audit_log WHERE target_id IN ($1, $2) ORDER BY occurred_at`, id, pk.accountID)
+	for rows.Next() {
+		var a string
+		_ = rows.Scan(&a)
+		actions = append(actions, a)
+	}
+	if strings.Join(actions, ",") != "abuse_imagery.matched,account.suspended" {
+		t.Errorf("audit log = %v", actions)
+	}
+
+	// Processing again (a retried job) changes nothing.
+	e.process(id)
+	var cases int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM abuse_imagery_cases WHERE media_id = $1`, id).Scan(&cases)
+	if cases != 1 {
+		t.Errorf("cases after reprocessing = %d, want 1", cases)
+	}
+
+	// The evidence and the account can't be deleted while the case exists.
+	if _, err := e.pool.Exec(ctx, `DELETE FROM accounts WHERE id = $1`, pk.accountID); err == nil {
+		t.Error("deleted the account of an open case")
+	}
+
+	// Other uploads are scanned and published as usual.
+	other := e.newClient()
+	e.verifiedUser(other)
+	_, body = e.upload(other, photo(t, 3))
+	e.process(body["id"].(string))
+	var verdict string
+	_ = e.pool.QueryRow(ctx, `SELECT scan_verdict FROM media_assets WHERE id = $1`, body["id"]).Scan(&verdict)
+	if verdict != "clean" {
+		t.Errorf("unrelated upload verdict = %q, want clean", verdict)
 	}
 }
