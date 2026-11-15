@@ -133,7 +133,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	// The API only stores raw uploads in quarantine; it never decodes them.
-	mediaSvc := media.NewService(st, objects, queue, nil, logger)
+	mediaSvc := media.NewService(st, objects, queue, media.Scanning{}, logger)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -182,6 +182,14 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := media.CheckPureCodecs(); err != nil {
 		return err
 	}
+	scanner, err := media.NewScanner(cfg.AbuseScan)
+	if err != nil {
+		return err
+	}
+	evidence, err := media.NewEvidenceSealer(cfg.SecretKey)
+	if err != nil {
+		return err
+	}
 	objects, err := storage.NewS3(cfg.Storage)
 	if err != nil {
 		return err
@@ -200,9 +208,7 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	emailer := auth.NewEmailer(cfg, st, sender, logger)
 	keys := jobs.NewKeyMaker(st, sealer, logger)
-	// No abuse-imagery scanning service is configured yet (ADR 0011); uploads are
-	// limited to accounts with a confirmed email meanwhile.
-	mediaSvc := media.NewService(st, objects, nil, media.NoScanner{}, logger)
+	mediaSvc := media.NewService(st, objects, nil, media.Scanning{Scanner: scanner, Evidence: evidence}, logger)
 	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, logger)
 	if err != nil {
 		return err
@@ -210,7 +216,10 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := client.Start(ctx); err != nil {
 		return fmt.Errorf("start worker: %w", err)
 	}
-	logger.Info("worker started", "version", version.Version, "smtp_host", cfg.Mail.Host)
+	logger.Info("worker started", "version", version.Version, "smtp_host", cfg.Mail.Host, "abuse_scanner", scanner.Name())
+	if !cfg.AbuseScan.Enabled() {
+		logger.Warn("no abuse imagery scanner is configured; uploads are limited to accounts with a confirmed email (ADR 0022)")
+	}
 
 	<-ctx.Done()
 	logger.Info("worker stopping")

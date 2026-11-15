@@ -80,6 +80,8 @@ type Config struct {
 	Mail Mail
 	// Storage is the S3-compatible object storage for media (ADR 0010).
 	Storage Storage
+	// AbuseScan is how the worker checks uploads for known abuse imagery (ADR 0022).
+	AbuseScan AbuseScan
 	// SecretKey (32 bytes, PC_SECRET_KEY) encrypts actors' private keys at rest
 	// (ADR 0012). Only the worker needs it; it's nil in production processes that
 	// weren't given it.
@@ -105,7 +107,30 @@ type Storage struct {
 	// MediaURL is the public address of MediaBucket's contents, e.g.
 	// https://media.pets.example.org. Image URLs are MediaURL + "/" + key.
 	MediaURL string
+	// EvidenceBucket holds encrypted originals of uploads that matched known abuse
+	// imagery, kept for the legally required report (ADR 0022). Private, with no
+	// lifecycle rule that deletes objects. Only used when a scanner is configured.
+	EvidenceBucket string
 }
+
+// Abuse imagery scanners (PC_ABUSE_SCANNER).
+const (
+	// ScannerNone means no scanning; uploads are limited to accounts with a confirmed email.
+	ScannerNone = "none"
+	// ScannerHashList matches uploads against a file of known digests.
+	ScannerHashList = "hashlist"
+)
+
+// AbuseScan configures abuse imagery scanning (ADR 0022).
+type AbuseScan struct {
+	// Scanner is ScannerNone (the default) or ScannerHashList.
+	Scanner string
+	// HashListFile is ScannerHashList's list: one MD5, SHA-1, or SHA-256 hex digest per line.
+	HashListFile string
+}
+
+// Enabled reports whether a scanner is configured.
+func (a AbuseScan) Enabled() bool { return a.Scanner != "" && a.Scanner != ScannerNone }
 
 // RequireSecretKey reports whether a usable secret key is configured, for processes
 // that encrypt or decrypt with it.
@@ -249,6 +274,9 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Storage.QuarantineBucket = valueOr(getenv("PC_S3_QUARANTINE_BUCKET"), cfg.Storage.QuarantineBucket)
 	cfg.Storage.MediaBucket = valueOr(getenv("PC_S3_MEDIA_BUCKET"), cfg.Storage.MediaBucket)
 	cfg.Storage.MediaURL = strings.TrimSuffix(valueOr(getenv("PC_MEDIA_URL"), cfg.Storage.MediaURL), "/")
+	cfg.Storage.EvidenceBucket = valueOr(getenv("PC_S3_EVIDENCE_BUCKET"), cfg.Storage.EvidenceBucket)
+	cfg.AbuseScan.Scanner = valueOr(getenv("PC_ABUSE_SCANNER"), ScannerNone)
+	cfg.AbuseScan.HashListFile = getenv("PC_ABUSE_HASH_LIST_FILE")
 
 	if pw := readSecret("PC_DATABASE_PASSWORD"); pw != "" && cfg.DatabaseURL != "" {
 		u, err := withPassword(cfg.DatabaseURL, pw)
@@ -344,6 +372,21 @@ func (c Config) validate() error {
 	}
 	if c.Storage.QuarantineBucket == "" || c.Storage.MediaBucket == "" || c.Storage.QuarantineBucket == c.Storage.MediaBucket {
 		errs = append(errs, errors.New("PC_S3_QUARANTINE_BUCKET and PC_S3_MEDIA_BUCKET must be set and different (raw uploads must never be public)"))
+	}
+
+	switch c.AbuseScan.Scanner {
+	case "", ScannerNone:
+	case ScannerHashList:
+		if c.AbuseScan.HashListFile == "" {
+			errs = append(errs, errors.New("PC_ABUSE_SCANNER=hashlist needs PC_ABUSE_HASH_LIST_FILE"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("PC_ABUSE_SCANNER must be %s or %s, got %q", ScannerNone, ScannerHashList, c.AbuseScan.Scanner))
+	}
+	if c.AbuseScan.Enabled() {
+		if ev := c.Storage.EvidenceBucket; ev == "" || ev == c.Storage.QuarantineBucket || ev == c.Storage.MediaBucket {
+			errs = append(errs, errors.New("PC_S3_EVIDENCE_BUCKET must be set and differ from the other buckets when a scanner is configured (evidence must never expire or be public)"))
+		}
 	}
 
 	if c.Env == Production {
@@ -448,7 +491,7 @@ func publicURLDefault(env Environment, domain string) string {
 // storageDefaults point development at MinIO (compose.dev.yaml). In production the
 // operator sets their provider's endpoint, credentials, and public media address.
 func storageDefaults(env Environment) Storage {
-	s := Storage{Region: "us-east-1", QuarantineBucket: "quarantine", MediaBucket: "media"}
+	s := Storage{Region: "us-east-1", QuarantineBucket: "quarantine", MediaBucket: "media", EvidenceBucket: "evidence"}
 	if env == Production {
 		return s
 	}

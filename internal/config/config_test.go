@@ -128,6 +128,35 @@ func TestStorage(t *testing.T) {
 	}
 }
 
+func TestAbuseScan(t *testing.T) {
+	base := map[string]string{"PC_DATABASE_URL": "postgres://x"}
+	cfg, err := Load(env(base))
+	if err != nil || cfg.AbuseScan.Scanner != ScannerNone {
+		t.Fatalf("default scanner = %q, err %v; want %q", cfg.AbuseScan.Scanner, err, ScannerNone)
+	}
+
+	base["PC_ABUSE_SCANNER"] = "photodna"
+	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_ABUSE_SCANNER") {
+		t.Errorf("unknown scanner: err = %v", err)
+	}
+	base["PC_ABUSE_SCANNER"] = ScannerHashList
+	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_ABUSE_HASH_LIST_FILE") {
+		t.Errorf("hashlist without a file: err = %v", err)
+	}
+	base["PC_ABUSE_HASH_LIST_FILE"] = "/etc/hashes.txt"
+	cfg, err = Load(env(base))
+	if err != nil {
+		t.Fatalf("hashlist with a file: %v", err)
+	}
+	if cfg.Storage.EvidenceBucket != "evidence" {
+		t.Errorf("EvidenceBucket = %q, want the default", cfg.Storage.EvidenceBucket)
+	}
+	base["PC_S3_EVIDENCE_BUCKET"] = "quarantine"
+	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_S3_EVIDENCE_BUCKET") {
+		t.Errorf("evidence in the quarantine bucket, which expires objects: err = %v", err)
+	}
+}
+
 func TestSecretKey(t *testing.T) {
 	dev, err := Load(env(map[string]string{"PC_DATABASE_URL": "postgres://x"}))
 	if err != nil || dev.RequireSecretKey() != nil {
