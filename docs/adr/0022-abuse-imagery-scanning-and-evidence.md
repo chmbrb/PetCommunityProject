@@ -1,6 +1,6 @@
 # 0022. Abuse imagery scanning and evidence preservation
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-05
 - **Details:** the "Match against a CSAM hash list" step in [0011](0011-media-processing-pipeline.md). The rest of 0011 stands.
 - **Related:** [0010](0010-s3-compatible-media-storage.md), [0011](0011-media-processing-pipeline.md), [0012](0012-activitypub-shaped-model-federation-deferred.md), THREAT_MODEL.md C1, [COMPLIANCE.md](../COMPLIANCE.md#phase-1-foundation) Phase 1, PLAN.md Data Retention

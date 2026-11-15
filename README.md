@@ -2,7 +2,7 @@
 
 A federated, community-run platform that connects people and organizations around household pets: adopting, fostering, and pet sitting, with local communities built around shelters and rescues.
 
-> **Status:** Phase 1 (foundation) in progress. The project skeleton runs, but there are no user-facing features yet. See the [plan and roadmap](docs/PLAN.md).
+> **Status:** Phase 1 (foundation) in progress. Accounts work on the web: sign-up and sign-in with passkeys, email links or codes, or passwords, optional two-step sign-in, and profile photos that pass through the photo safety pipeline. Database backups run with weekly restore drills. Still to come in Phase 1: the mobile app's instance picker and iOS build, groundwork for Google and Apple sign-in, a perceptual image-matching provider, and off-site backups. There are no pet listings or communities yet. See the [plan and roadmap](docs/PLAN.md).
 
 ## Vision
 
@@ -31,7 +31,7 @@ Finding a pet, a foster home, or a trustworthy sitter is scattered across shelte
 
 Details, decisions, and exit criteria for each phase are in [docs/PLAN.md](docs/PLAN.md).
 
-## Planned stack
+## Stack
 
 Go backend · PostgreSQL (with PostGIS) · Vue 3 + Vuetify web app, packaged for Android and iOS with Capacitor · Caddy · S3-compatible object storage · Docker Compose. The reasons for each choice are recorded in the [architecture decision records](docs/adr/README.md).
 
