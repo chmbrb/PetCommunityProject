@@ -1,7 +1,7 @@
 # 0023. Mobile instance picker and app sessions
 
 - **Status:** Accepted
-- **Date:** 2026-11-15
+- **Date:** 2026-11-15 (amended 2026-11-15: secure storage plugin chosen)
 - **Details:** the "instance picker" in [0018](0018-mobile-apps-capacitor.md) and the mobile tokens in [0014](0014-authentication-sessions-mfa.md). Both stand.
 - **Related:** PLAN.md Phase 1 (mobile shell); [0017](0017-instance-feature-flags.md), [0019](0019-sign-in-options-passkeys-sso.md); THREAT_MODEL.md M4, S1
 
@@ -42,11 +42,19 @@ Threats:
 
 **Sessions in the app.**
 
-- Sign-ins and sign-ups from the app send `"client": "mobile"`. The API returns the bearer token, which is stored in the Keychain (iOS) or with an Android Keystore key, using a secure storage plugin chosen and reviewed as part of this work. It's never stored in `localStorage` or Capacitor Preferences.
+- Sign-ins and sign-ups from the app send `"client": "mobile"`. The API returns the bearer token, which is stored in the Keychain (iOS) or with an Android Keystore key, using the secure storage plugin below. It's never stored in `localStorage` or Capacitor Preferences.
 - Every request to the connected instance sends `Authorization: Bearer …`. The token is sent only to the stored origin, never to URLs built from server responses (such as image URLs on another host).
 - The app creates a random device token once per install, stores it the same way, and sends it as `X-Device-Token`, so password sign-ins recognize the device as [0014](0014-authentication-sessions-mfa.md) describes.
 - Signing out, or switching instance, calls `POST /api/v1/auth/logout` and then deletes the token. A `401` on an authenticated request deletes the token and returns to sign-in.
 - The connected origin and the instance metadata are not secret and are kept in Capacitor Preferences.
+
+**Secure storage plugin.** [`@aparajita/capacitor-secure-storage`](https://github.com/aparajita/capacitor-secure-storage) (MIT), pinned to an exact version like the app's other dependencies:
+
+- **iOS:** each item is stored with the `afterFirstUnlockThisDeviceOnly` accessibility, so it's readable in the background after the phone's first unlock (for push, later), but never copied into backups or onto a new phone. iCloud Keychain sync stays off.
+- **Android:** values are encrypted with AES-GCM under a key that's generated in, and never leaves, the Android Keystore. The plugin keeps the encrypted values in `WSSecureStorageSharedPreferences`, which the app excludes from Android backups: the key isn't backed up, so a restored copy couldn't be decrypted.
+- **Only in the native apps.** The plugin falls back to `localStorage` on the web, so it's only loaded when `Capacitor.isNativePlatform()` is true. The web app keeps using its `HttpOnly` cookie.
+- **A value that can't be read counts as signed out.** If a read fails (a reset Keystore, or data restored from elsewhere), the app deletes the item and returns to sign-in. A missing device token is simply created again.
+- **A reinstall starts clean.** iOS keeps Keychain items after an app is deleted. The app records in Preferences, which are deleted with the app, that it has run before; if that's missing, it clears secure storage before reading anything.
 
 **Sign-in methods in the app.** Email codes and passwords work as on the web: email codes exist for exactly this case, where a link would open in the browser instead of the app. Two-step sign-in works the same. Passkeys in the app are **not** part of this decision (see Consequences).
 
@@ -54,7 +62,7 @@ Threats:
 
 - Phase 1's mobile exit becomes testable against any instance, including a local one from the emulator.
 - `X-Device-Token` and mobile sessions, already in the API, get their first client.
-- A secure storage plugin becomes a dependency of the app. Capacitor has no official one, so a community plugin must be reviewed for maintenance and for actually using the Keychain and Keystore.
+- The secure storage plugin is a community plugin with one maintainer, and its iOS side depends on `keychain-swift`, which hasn't had a release since 2024. Both are small and MIT-licensed. Updates get the same review as the first choice: the Keychain accessibility used, and the Android cipher and key setup. If either stops being maintained, it's small enough to fork. The plugin also lists `@capacitor/app` and `@capacitor/keyboard` as dependencies that its code doesn't use; check after `cap sync` that they aren't added to the native projects.
 - **Passkeys don't work in the app yet.** The WebView's origin (`https://localhost` or `capacitor://localhost`) isn't an origin any instance accepts, and native passkeys need each instance's domain to be associated with the app. Android checks this at run time through a `/.well-known/assetlinks.json` file on the instance, which any instance can serve. iOS only trusts domains listed in the app's entitlements when the app is built, so an iOS app can't use passkeys on instances added later. A follow-up ADR decides how passkeys work in the app. Until then, the app hides passkey sign-in and offers email codes and passwords.
 - Email links keep opening in the browser. App links per instance have the same build-time limit on iOS as passkeys.
 - The curated list is only as current as the installed app. Updating it needs a release; a fetched list would need a server the project runs, which it avoids.
@@ -67,4 +75,7 @@ Threats:
 - **Blocking instances not on the list:** stops phishing instances, but also every legitimate new instance until an app release. A clear notice and the visible domain are the balance chosen.
 - **Following redirects during the check:** convenient when an instance moves, but it lets the app end up somewhere other than the host the person checked.
 - **Keeping the token in `localStorage` or Preferences:** readable by any script in the WebView and included in some device backups.
+- **`capacitor-secure-storage-plugin`:** well maintained, but its iOS items always use `afterFirstUnlock`, which lets an encrypted backup restore the token onto a new phone, and on Android it encrypts values with RSA and PKCS#1 v1.5 padding, an older scheme than AES-GCM.
+- **`@capgo/capacitor-native-biometric`:** stores secrets behind a biometric prompt, which suits unlocking a saved password but not a token the app needs for every request. It also brings several Android UI libraries.
+- **Capawesome Secure Preferences and Ionic Identity Vault:** available only to sponsors or as a paid product.
 - **Cookies in the app:** the API never allows credentials cross-origin ([0014](0014-authentication-sessions-mfa.md)), and third-party cookies in WebViews are unreliable.
