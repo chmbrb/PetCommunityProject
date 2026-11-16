@@ -1,7 +1,7 @@
 # 0018. Native mobile apps with Capacitor
 
 - **Status:** Accepted
-- **Date:** 2026-10-29 (amended 2026-11-15: platform services allowed in the store builds; F-Droid build optional)
+- **Date:** 2026-10-29 (amended 2026-11-15: platform services allowed in the store builds; F-Droid build optional; conditions for crash reports and analytics)
 - **Related:** PLAN.md decision #8, Phases 1–3; [0007](0007-vuetify-spa-with-server-rendered-public-pages.md), [0012](0012-activitypub-shaped-model-federation-deferred.md), [0014](0014-authentication-sessions-mfa.md); THREAT_MODEL.md M1–M5
 
 ## Context
@@ -29,7 +29,8 @@ Package the existing Vue 3 + Vuetify app as native Android and iOS apps with **C
 - **One publisher for all instances:** the project publishes the apps under a single organization account on each store. Instances never need their own store accounts.
 - **Apple fee:** once the nonprofit entity exists, apply for Apple's developer fee waiver for nonprofits. The waiver requires a free app with no in-app purchases, so donations are taken on the website only.
 - **iOS stopgap:** until the App Store account exists, iOS users install the web app to their home screen, which supports web push on iOS 16.4+. The web app stays a good installable app after that, for people who don't want the native app.
-- **Platform services in the store apps:** the Google Play and App Store builds use each platform's standard services where that's the usual way to build such a feature and adds no cost, such as Firebase Cloud Messaging and Google Play services on Android, and APNs on iOS. Open-source libraries are preferred when they do the job as well. Not allowed in any build: SDKs for advertising, analytics, or tracking, and anything that sends personal data to a third party beyond what the feature needs (push payloads stay free of personal data, as above).
+- **Platform services in the store apps:** the Google Play and App Store builds use each platform's standard services where that's the usual way to build such a feature and adds no cost, such as Firebase Cloud Messaging and Google Play services on Android, and APNs on iOS. Open-source libraries are preferred when they do the job as well. Not allowed in any build: advertising SDKs; third-party tracking (linking a person's activity with data from other companies' apps or sites, or advertising identifiers); and anything that sends personal data to a third party beyond what the feature needs (push payloads stay free of personal data, as above). Firebase Cloud Messaging is added without Firebase Analytics.
+- **Crash reports and usage analytics** are allowed when the data stays with the project or the instance and is never sold or shared; it's aggregate or pseudonymous, without personal details, precise locations, or message content; it's disclosed in the privacy policy and store labels, can be turned off, and is kept only briefly; and each instance's operator decides what's collected about its users. Which tools to use, and who runs them, is decided separately (PLAN.md open questions).
 - **F-Droid:** possible later, if people ask for it. F-Droid only accepts builds without proprietary services, so it would need a second Android build with UnifiedPush instead of FCM. To keep that option cheap, code that uses Google's services stays behind the `platform` module.
 - **Store requirements are built in from the start:** in-app account deletion, report and block on all user-generated content, content filtering, privacy labels/data safety forms.
 
