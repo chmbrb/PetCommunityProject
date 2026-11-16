@@ -42,7 +42,7 @@ All verified tiers can be downgraded or revoked. Every tier change is written to
 - **Proxy:** Caddy (automatic TLS)
 - **Backend:** Go API, with a Postgres-backed job queue (River) for media processing, notifications, and later federation delivery
 - **Frontend:** Vuetify SPA, plus server-rendered listing pages and OpenGraph metadata so listings rank in search and share well on social media
-- **Mobile:** the same Vuetify app packaged as native Android and iOS apps with Capacitor; push notifications through FCM (Android), APNs (iOS), and UnifiedPush (Android without Google services, and the F-Droid build); installable web app with web push as the iOS stopgap until the App Store account exists
+- **Mobile:** the same Vuetify app packaged as native Android and iOS apps with Capacitor; push notifications through FCM (Android) and APNs (iOS); installable web app with web push as the iOS stopgap until the App Store account exists
 - **Database:** PostgreSQL with PostGIS (location search) and built-in full-text search (no separate search cluster)
 - **Media:** S3-compatible object storage: MinIO for local development; a hosted provider or a maintained self-hosted server in production (see ADR 0010)
 - **Orchestration:** docker compose
@@ -193,7 +193,8 @@ Operator tasks to come back to. Details are in [DEVELOPMENT.md](DEVELOPMENT.md) 
 - Platform insurance cost per instance, and whether it's affordable for small operators
 - Minimum sitter insurance coverage required, and how certificates are checked
 - App publishing accounts: one organization account for the whole project, not one per instance (Apple $99/year, Google Play $25 once). Once the nonprofit entity exists (with a D-U-N-S number), apply for Apple's developer fee waiver for nonprofits; it requires a free app with no in-app purchases, so donations stay on the website. Check Apple's current waiver terms and eligible countries before applying.
-- Android distribution beyond Google Play: an F-Droid build (free; requires a fully open-source build with UnifiedPush instead of Google's push service)
+- Android distribution beyond Google Play: an F-Droid build, if people ask for it (free to publish, but needs a second build without Google's services, with UnifiedPush instead of FCM; see ADR 0018)
 - AGPL and the Apple App Store: Apple's terms conflict with GPL-family licenses for code the publisher doesn't own. Options: a contributor agreement that lets the project publish contributions in app stores, or an explicit app-store exception for the mobile client. Get legal advice before accepting outside contributions to the client code.
 - Whether to offer a sign-in option for Meta later, based on pilot and user feedback
 - Push notification privacy: payloads pass through Google and Apple, so they carry no personal data (see ADR 0018).
+- Crash reports and usage analytics: ADR 0018 sets the conditions (no advertising or third-party tracking; data kept by the project or the instance, aggregate or pseudonymous, disclosed, and possible to turn off). Still to decide: which tools (self-hosted, e.g. GlitchTip for crashes and Plausible or Umami for usage, or counts from the API's own data), who runs them when one app serves many instances, opt-in or opt-out, and retention periods (Data Retention table). Start with crash reports and server-side counts; choose a usage analytics tool once the Phase 2 pilot raises real questions.
