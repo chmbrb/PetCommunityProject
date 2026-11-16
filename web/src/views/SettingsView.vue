@@ -30,6 +30,8 @@ import PasswordField from '../components/PasswordField.vue'
 import ProfilePhotoSection from '../components/ProfilePhotoSection.vue'
 import RecoveryCodesList from '../components/RecoveryCodesList.vue'
 import SecondStepForm from '../components/SecondStepForm.vue'
+import { connectedInstance, isApp } from '../appInstance'
+import ConnectedInstance from '../components/ConnectedInstance.vue'
 import { deviceLabel } from '../deviceLabel'
 import { describePasskeyError } from '../passkeyErrors'
 import { useSession } from '../useSession'
@@ -356,9 +358,10 @@ function formatDateTime(iso: string) {
     class="py-8"
     max-width="720"
   >
-    <h1 class="text-h4 mb-6">
+    <h1 class="text-h4 mb-2">
       Settings
     </h1>
+    <ConnectedInstance class="mb-4" />
 
     <v-alert
       v-if="loaded && !me"
@@ -552,7 +555,15 @@ function formatDateTime(iso: string) {
           Confirm your email address before removing your only passkey, so you can still sign
           in by email.
         </p>
+        <!-- Passkeys can't be created inside the apps yet (ADR 0023). -->
+        <p
+          v-if="isApp"
+          class="text-body-2 text-medium-emphasis"
+        >
+          To add a passkey, sign in on the web at {{ connectedInstance()?.host }}.
+        </p>
         <v-btn
+          v-else
           color="primary"
           :loading="busy && addOpen"
           @click="openAdd"
@@ -966,7 +977,7 @@ function formatDateTime(iso: string) {
             Email me a code
           </v-btn>
           <v-btn
-            v-if="passkeys.length > 0"
+            v-if="passkeys.length > 0 && !isApp"
             color="primary"
             :loading="busy"
             @click="confirmWithPasskey"

@@ -108,7 +108,15 @@ VITE_DEFAULT_INSTANCE_URL=https://your-instance.example pnpm cap:sync   # build 
 pnpm exec cap open android   # or: cap open ios (macOS only)
 ```
 
-Native builds must set `VITE_DEFAULT_INSTANCE_URL` until the instance picker exists. The app ID (`org.petcommunityproject.app` in `web/capacitor.config.ts`) is a **placeholder**: choose the final one before the first store upload, because it can't change afterwards.
+The apps start at the **instance picker** (ADR 0023). `VITE_DEFAULT_INSTANCE_URL` is optional: it's the instance the picker preselects, and the only one on the app's list of known instances. Other instances can still be entered, after a notice. The choice is kept on the device; **Change instance** on the sign-in, sign-up, and settings screens signs out and returns to the picker. Inside the apps, people sign in with email codes or a password: passkeys are hidden until they work there.
+
+To try the app against a local instance, build it with local instances allowed. This lets the picker accept plain HTTP to `localhost`, the Android emulator's host (`10.0.2.2`), and private-network addresses, and accept an instance without `PC_INSTANCE_DOMAIN` set. On Android it also allows mixed content and cleartext traffic (`capacitor.config.ts`). Never use it for builds you give to other people:
+
+```sh
+VITE_ALLOW_LOCAL_INSTANCES=true VITE_DEFAULT_INSTANCE_URL=http://10.0.2.2:8080 pnpm cap:sync
+```
+
+Run `pnpm cap:sync` again without it afterwards, so the native projects go back to the release settings. The app ID (`org.petcommunityproject.app` in `web/capacitor.config.ts`) is a **placeholder**: choose the final one before the first store upload, because it can't change afterwards.
 
 CI builds a debug Android APK. iOS builds need a macOS runner and will be added with TestFlight in Phase 2.
 
