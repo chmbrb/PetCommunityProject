@@ -13,9 +13,11 @@
     "cap:sync": "pnpm build && cap sync"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
     "@capacitor/android": "8.6.0",
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0",
+    "@capacitor/preferences": "8.0.1",
     "@mdi/js": "7.4.47",
     "@simplewebauthn/browser": "14.0.0",
     "uqr": "0.1.3",

@@ -110,6 +110,50 @@ export function resolveApiBase(isNative: boolean, defaultInstanceUrl: string | u
 const apiBase = () =>
   resolveApiBase(Capacitor.isNativePlatform(), import.meta.env.VITE_DEFAULT_INSTANCE_URL)
 
+/** A session as the API returns it to the apps, which store the token themselves. */
+export interface AppSession {
+  token: string
+  expires_at: string
+  /** Set when the API issued a new device token, to send as X-Device-Token from now on. */
+  device_token?: string
+}
+
+/**
+ * Where the native apps keep their bearer token and device token (ADR 0023). The web
+ * app has none: it signs in with an HttpOnly cookie.
+ */
+export interface SessionStore {
+  token(): string | null
+  deviceToken(): string | null
+  save(session: AppSession): Promise<void>
+  /** Forgets the session token; the device token stays. */
+  clear(): Promise<void>
+}
+
+/** Keeps the session only until the app closes: the fallback when secure storage fails. */
+export function memorySessionStore(): SessionStore {
+  let token: string | null = null
+  let deviceToken: string | null = null
+  return {
+    token: () => token,
+    deviceToken: () => deviceToken,
+    async save(session) {
+      token = session.token
+      deviceToken = session.device_token ?? deviceToken
+    },
+    async clear() {
+      token = null
+    },
+  }
+}
+
+let sessionStore: SessionStore | null = null
+
+/** Sets the app's session store at startup; null on the web. */
+export function setSessionStore(store: SessionStore | null) {
+  sessionStore = store
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
@@ -117,6 +161,14 @@ async function request<T>(
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
+  const token = sessionStore?.token()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const deviceToken = sessionStore?.deviceToken()
+  if (deviceToken) {
+    headers['X-Device-Token'] = deviceToken
+  }
   let payload: BodyInit | undefined
   if (body instanceof Blob) {
     // Files are sent as-is; the server identifies the format from the content.
@@ -141,12 +193,33 @@ async function request<T>(
     } catch {
       // Not a JSON error body (e.g. a proxy error page); keep the HTTP status text.
     }
+    if (token && code === 'unauthenticated') {
+      // The session ended (expired, revoked, or signed out elsewhere). Other 401s, such
+      // as "mfa_required" during a new sign-in, don't mean that.
+      await sessionStore?.clear()
+    }
     throw new ApiError(res.status, code, message, field, mfaToken)
   }
   if (res.status === 204) {
     return undefined as T
   }
   return (await res.json()) as T
+}
+
+/**
+ * Finishes a sign-in or sign-up. The apps ask for their session in the response and
+ * store it; the web app gets a cookie instead.
+ */
+async function startSession(path: string, body: object, fetchImpl?: typeof fetch): Promise<Me> {
+  const payload = sessionStore ? { ...body, client: 'mobile' } : body
+  return keepSession(await request<Me & { session?: AppSession }>('POST', path, payload, fetchImpl))
+}
+
+async function keepSession({ session, ...me }: Me & { session?: AppSession }): Promise<Me> {
+  if (session) {
+    await sessionStore?.save(session)
+  }
+  return me
 }
 
 export function fetchInstance(fetchImpl?: typeof fetch): Promise<InstanceInfo> {
@@ -174,7 +247,7 @@ export function beginSignup(details: SignupDetails) {
 }
 
 export function finishSignup(challengeId: string, credential: RegistrationResponseJSON) {
-  return request<Me>('POST', '/api/v1/auth/signup/finish', { challenge_id: challengeId, credential })
+  return startSession('/api/v1/auth/signup/finish', { challenge_id: challengeId, credential })
 }
 
 export function beginLogin() {
@@ -182,11 +255,16 @@ export function beginLogin() {
 }
 
 export function finishLogin(challengeId: string, credential: AuthenticationResponseJSON) {
-  return request<Me>('POST', '/api/v1/auth/login/finish', { challenge_id: challengeId, credential })
+  return startSession('/api/v1/auth/login/finish', { challenge_id: challengeId, credential })
 }
 
-export function logout() {
-  return request<void>('POST', '/api/v1/auth/logout')
+/** Ends the session. The app forgets its token even if the request fails. */
+export async function logout(fetchImpl?: typeof fetch) {
+  try {
+    await request<void>('POST', '/api/v1/auth/logout', undefined, fetchImpl)
+  } finally {
+    await sessionStore?.clear()
+  }
 }
 
 /**
@@ -197,8 +275,8 @@ export function requestSignInLink(email: string) {
   return request<{ status: string }>('POST', '/api/v1/auth/login/email/request', { email })
 }
 
-export function finishEmailSignIn(proof: EmailProof) {
-  return request<Me>('POST', '/api/v1/auth/login/email/finish', proof)
+export function finishEmailSignIn(proof: EmailProof, fetchImpl?: typeof fetch) {
+  return startSession('/api/v1/auth/login/email/finish', proof, fetchImpl)
 }
 
 /** Checks the details and emails a link and code that create the account. */
@@ -208,7 +286,7 @@ export function requestEmailSignup(details: SignupDetails) {
 
 /** Creates the account; a password is optional. */
 export function finishEmailSignup(proof: EmailProof, password?: string) {
-  return request<Me>('POST', '/api/v1/auth/signup/email/finish', password ? { ...proof, password } : proof)
+  return startSession('/api/v1/auth/signup/email/finish', password ? { ...proof, password } : proof)
 }
 
 /**
@@ -216,7 +294,7 @@ export function finishEmailSignup(proof: EmailProof, password?: string) {
  * with code "email_code_required" and emails a code; repeat the call with it.
  */
 export function passwordSignIn(email: string, password: string, code?: string) {
-  return request<Me>('POST', '/api/v1/auth/login/password', code ? { email, password, code } : { email, password })
+  return startSession('/api/v1/auth/login/password', code ? { email, password, code } : { email, password })
 }
 
 /** Adds or changes the password. Signs out every other device. */
@@ -228,9 +306,18 @@ export function removePassword() {
   return request<void>('DELETE', '/api/v1/me/password')
 }
 
-/** Finishes a sign-in that failed with "mfa_required". */
-export function finishSecondStep(mfaToken: string, step: SecondStep) {
-  return request<Me>('POST', '/api/v1/auth/login/mfa', { mfa_token: mfaToken, ...step })
+/**
+ * Finishes a sign-in that failed with "mfa_required". The first step already said
+ * whether this is the app, so no client field is sent.
+ */
+export async function finishSecondStep(mfaToken: string, step: SecondStep, fetchImpl?: typeof fetch) {
+  const res = await request<Me & { session?: AppSession }>(
+    'POST',
+    '/api/v1/auth/login/mfa',
+    { mfa_token: mfaToken, ...step },
+    fetchImpl,
+  )
+  return keepSession(res)
 }
 
 /** Starts adding an authenticator app. Show the secret once; nothing is on yet. */
