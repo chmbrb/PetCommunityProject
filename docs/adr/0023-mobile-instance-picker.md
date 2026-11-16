@@ -1,7 +1,7 @@
 # 0023. Mobile instance picker and app sessions
 
 - **Status:** Accepted
-- **Date:** 2026-11-15 (amended 2026-11-15: secure storage plugin chosen)
+- **Date:** 2026-11-15 (amended 2026-11-15: secure storage plugin chosen; device token issued by the API)
 - **Details:** the "instance picker" in [0018](0018-mobile-apps-capacitor.md) and the mobile tokens in [0014](0014-authentication-sessions-mfa.md). Both stand.
 - **Related:** PLAN.md Phase 1 (mobile shell); [0017](0017-instance-feature-flags.md), [0019](0019-sign-in-options-passkeys-sso.md); THREAT_MODEL.md M4, S1
 
@@ -44,7 +44,8 @@ Threats:
 
 - Sign-ins and sign-ups from the app send `"client": "mobile"`. The API returns the bearer token, which is stored in the Keychain (iOS) or with an Android Keystore key, using the secure storage plugin below. It's never stored in `localStorage` or Capacitor Preferences.
 - Every request to the connected instance sends `Authorization: Bearer …`. The token is sent only to the stored origin, never to URLs built from server responses (such as image URLs on another host).
-- The app creates a random device token once per install, stores it the same way, and sends it as `X-Device-Token`, so password sign-ins recognize the device as [0014](0014-authentication-sessions-mfa.md) describes.
+- The API issues a device token with the app's first session (`session.device_token`). The app stores it the same way, keeps it when signing out, and sends it as `X-Device-Token`, so password sign-ins recognize the device as [0014](0014-authentication-sessions-mfa.md) describes.
+- The second step of a sign-in (`POST /api/v1/auth/login/mfa`) sends no `client` field: the API rejects unknown fields, and the first step already recorded that it's the app. Only a `401` with code `unauthenticated` ends the stored session; other `401`s (`mfa_required`, `email_code_required`, `sign_in_failed`) are part of signing in.
 - Signing out, or switching instance, calls `POST /api/v1/auth/logout` and then deletes the token. A `401` on an authenticated request deletes the token and returns to sign-in.
 - The connected origin and the instance metadata are not secret and are kept in Capacitor Preferences.
 
@@ -53,7 +54,7 @@ Threats:
 - **iOS:** each item is stored with the `afterFirstUnlockThisDeviceOnly` accessibility, so it's readable in the background after the phone's first unlock (for push, later), but never copied into backups or onto a new phone. iCloud Keychain sync stays off.
 - **Android:** values are encrypted with AES-GCM under a key that's generated in, and never leaves, the Android Keystore. The plugin keeps the encrypted values in `WSSecureStorageSharedPreferences`, which the app excludes from Android backups: the key isn't backed up, so a restored copy couldn't be decrypted.
 - **Only in the native apps.** The plugin falls back to `localStorage` on the web, so it's only loaded when `Capacitor.isNativePlatform()` is true. The web app keeps using its `HttpOnly` cookie.
-- **A value that can't be read counts as signed out.** If a read fails (a reset Keystore, or data restored from elsewhere), the app deletes the item and returns to sign-in. A missing device token is simply created again.
+- **A value that can't be read counts as signed out.** If a read fails (a reset Keystore, or data restored from elsewhere), the app deletes the item and returns to sign-in. A missing device token is issued again at the next sign-in. If secure storage can't be opened at all, the app keeps the session in memory only, so signing in still works until the app closes.
 - **A reinstall starts clean.** iOS keeps Keychain items after an app is deleted. The app records in Preferences, which are deleted with the app, that it has run before; if that's missing, it clears secure storage before reading anything.
 
 **Sign-in methods in the app.** Email codes and passwords work as on the web: email codes exist for exactly this case, where a link would open in the browser instead of the app. Two-step sign-in works the same. Passkeys in the app are **not** part of this decision (see Consequences).
