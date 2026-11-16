@@ -118,7 +118,9 @@ VITE_ALLOW_LOCAL_INSTANCES=true VITE_DEFAULT_INSTANCE_URL=http://10.0.2.2:8080 p
 
 Run `pnpm cap:sync` again without it afterwards, so the native projects go back to the release settings. The app ID (`org.petcommunityproject.app` in `web/capacitor.config.ts`) is a **placeholder**: choose the final one before the first store upload, because it can't change afterwards.
 
-CI builds a debug Android APK. iOS builds need a macOS runner and will be added with TestFlight in Phase 2.
+CI builds a debug Android APK, and the iOS app for the simulator on a macOS runner (free for public repositories), without code signing. Signed device builds and TestFlight come in Phase 2, once the Apple Developer account exists.
+
+Swift package versions are pinned in `web/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, and CI fails if a sync or build would change it. After updating a Capacitor plugin, open the project in Xcode (or run `xcodebuild -resolvePackageDependencies`) on a Mac and commit the updated file. Without a Mac, take it from the `ios-package-resolved` artifact of the PR's CI run.
 
 ## Production deployment (preview)
 
