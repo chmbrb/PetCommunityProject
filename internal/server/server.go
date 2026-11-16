@@ -102,6 +102,10 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// softwareName identifies servers that serve this API, so the apps can tell an instance
+// from an unrelated server (ADR 0023). Modified versions keep it while they serve it.
+const softwareName = "petcommunity"
+
 // instanceResponse lets web and mobile clients adapt to an instance (ADR 0018).
 type instanceResponse struct {
 	Name       string          `json:"name"`
@@ -110,6 +114,13 @@ type instanceResponse struct {
 	APIVersion string          `json:"api_version"`
 	SourceURL  string          `json:"source_url"`
 	Features   map[string]bool `json:"features"`
+	// Software has the shape NodeInfo uses, so Phase 5 can publish the same values.
+	Software softwareInfo `json:"software"`
+}
+
+type softwareInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +141,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		APIVersion: "v1",
 		SourceURL:  s.cfg.SourceURL,
 		Features:   features,
+		Software:   softwareInfo{Name: softwareName, Version: version.Version},
 	})
 }
 

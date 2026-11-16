@@ -89,6 +89,9 @@ func TestInstance(t *testing.T) {
 	if !body.Features["open_registration"] || body.Features["pet_sitting"] {
 		t.Errorf("features = %v", body.Features)
 	}
+	if body.Software.Name != "petcommunity" || body.Software.Version != body.Version {
+		t.Errorf("software = %+v", body.Software)
+	}
 }
 
 func TestInstanceStoreError(t *testing.T) {
