@@ -8,12 +8,15 @@ import EmailCodeForm from '../components/EmailCodeForm.vue'
 import PasswordField from '../components/PasswordField.vue'
 import SecondStepForm from '../components/SecondStepForm.vue'
 import { describePasskeyError } from '../passkeyErrors'
+import { isApp } from '../appInstance'
+import ConnectedInstance from '../components/ConnectedInstance.vue'
 import { useSession } from '../useSession'
 
 const router = useRouter()
 const { signIn, signInWithEmail, signInWithPassword } = useSession()
 
-const supported = browserSupportsWebAuthn()
+// Passkeys don't work inside the apps yet (ADR 0023): email codes and passwords do.
+const supported = browserSupportsWebAuthn() && !isApp
 const passkeyError = ref<string | null>(null)
 const passkeyBusy = ref(false)
 
@@ -115,9 +118,10 @@ function startOver() {
     class="py-8"
     max-width="480"
   >
-    <h1 class="text-h4 mb-6">
+    <h1 class="text-h4 mb-2">
       Sign in
     </h1>
+    <ConnectedInstance class="mb-4" />
 
     <template v-if="mfaToken">
       <SecondStepForm

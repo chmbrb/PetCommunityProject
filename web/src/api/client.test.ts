@@ -20,12 +20,12 @@ describe('resolveApiBase', () => {
     expect(resolveApiBase(false, 'https://pets.example.org')).toBe('')
   })
 
-  it('uses the configured instance in native apps, without a trailing slash', () => {
-    expect(resolveApiBase(true, 'https://pets.example.org/')).toBe('https://pets.example.org')
+  it('uses the chosen instance in native apps', () => {
+    expect(resolveApiBase(true, 'https://pets.example.org')).toBe('https://pets.example.org')
   })
 
-  it('requires an instance URL in native apps', () => {
-    expect(() => resolveApiBase(true, undefined)).toThrow('VITE_DEFAULT_INSTANCE_URL')
+  it('needs an instance to be chosen in native apps', () => {
+    expect(() => resolveApiBase(true, null)).toThrow('no instance chosen')
   })
 })
 

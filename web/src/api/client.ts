@@ -15,6 +15,8 @@ export interface InstanceInfo {
   api_version: string
   source_url: string
   features: Record<string, boolean>
+  /** "petcommunity" for every instance of this software. */
+  software: { name: string; version: string }
 }
 
 /** Error shape returned by every API endpoint. */
@@ -94,21 +96,27 @@ export interface SignupDetails {
 export type EmailProof = { token: string } | { email: string; code: string }
 
 /**
- * Returns the origin API requests go to. The web app is served by its own
- * instance, so it uses relative URLs. Native apps must name an instance (ADR 0018).
+ * Returns the origin API requests go to. The web app is served by its own instance, so
+ * it uses relative URLs. The apps use the instance chosen in the picker (ADR 0023).
  */
-export function resolveApiBase(isNative: boolean, defaultInstanceUrl: string | undefined): string {
+export function resolveApiBase(isNative: boolean, instanceOrigin: string | null): string {
   if (!isNative) {
     return ''
   }
-  if (!defaultInstanceUrl) {
-    throw new Error('VITE_DEFAULT_INSTANCE_URL must be set for native builds')
+  if (!instanceOrigin) {
+    throw new Error('no instance chosen')
   }
-  return defaultInstanceUrl.replace(/\/+$/, '')
+  return instanceOrigin
 }
 
-const apiBase = () =>
-  resolveApiBase(Capacitor.isNativePlatform(), import.meta.env.VITE_DEFAULT_INSTANCE_URL)
+let instanceOrigin: string | null = null
+
+/** Sets the instance the app is connected to, at startup. Unused on the web. */
+export function setInstanceOrigin(origin: string | null) {
+  instanceOrigin = origin
+}
+
+const apiBase = () => resolveApiBase(Capacitor.isNativePlatform(), instanceOrigin)
 
 /** A session as the API returns it to the apps, which store the token themselves. */
 export interface AppSession {

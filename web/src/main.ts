@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { memorySessionStore, setSessionStore } from './api/client'
+import { loadConnectedInstance } from './appInstance'
 import router from './router'
 import vuetify from './plugins/vuetify'
 
@@ -18,6 +19,8 @@ async function start() {
       console.error('secure storage unavailable; keeping the session in memory', err)
       setSessionStore(memorySessionStore())
     }
+    // Before the first request: the API client needs to know which instance to call.
+    await loadConnectedInstance()
   }
   createApp(App).use(router).use(vuetify).mount('#app')
 }

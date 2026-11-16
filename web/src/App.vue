@@ -4,6 +4,7 @@ import { mdiAccountCircle, mdiPaw } from '@mdi/js'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { pickVariant } from './api/client'
+import { connectedInstance, isApp } from './appInstance'
 import { useInstance } from './useInstance'
 import { useSession } from './useSession'
 
@@ -11,6 +12,8 @@ const router = useRouter()
 const { instance } = useInstance()
 const { me, loaded, signOut } = useSession()
 const avatarUrl = computed(() => (me.value ? pickVariant(me.value.actor.avatar, 64)?.url : undefined))
+// Until the app is connected to an instance, there's no account to show.
+const hasInstance = !isApp || connectedInstance() !== null
 
 async function onSignOut() {
   await signOut()
@@ -40,7 +43,7 @@ async function onSignOut() {
       </v-app-bar-title>
 
       <template
-        v-if="loaded"
+        v-if="loaded && hasInstance"
         #append
       >
         <v-menu v-if="me">

@@ -7,12 +7,15 @@ import { ApiError, requestEmailSignup } from '../api/client'
 import EmailCodeForm from '../components/EmailCodeForm.vue'
 import PasswordField from '../components/PasswordField.vue'
 import { describePasskeyError } from '../passkeyErrors'
+import { isApp } from '../appInstance'
+import ConnectedInstance from '../components/ConnectedInstance.vue'
 import { useSession } from '../useSession'
 
 const router = useRouter()
 const { signUp, signUpWithEmail } = useSession()
 
-const supported = browserSupportsWebAuthn()
+// Passkeys don't work inside the apps yet (ADR 0023): email codes and passwords do.
+const supported = browserSupportsWebAuthn() && !isApp
 const form = reactive({ email: '', handle: '', display_name: '' })
 const fieldErrors = reactive<Record<string, string>>({})
 const error = ref<string | null>(null)
@@ -81,6 +84,7 @@ async function confirmCode(code: string) {
     <h1 class="text-h4 mb-2">
       Create an account
     </h1>
+    <ConnectedInstance class="mb-4" />
 
     <template v-if="emailSentTo">
       <p class="text-body-1 mb-6">
@@ -109,10 +113,19 @@ async function confirmCode(code: string) {
     </template>
 
     <template v-else>
-      <p class="text-body-1 mb-6">
+      <p
+        v-if="supported"
+        class="text-body-1 mb-6"
+      >
         We recommend a passkey: you sign in with your fingerprint, face, or device PIN, and
         there's no password to remember or steal. You can also sign in with codes we email
         you, and add a passkey later.
+      </p>
+      <p
+        v-else
+        class="text-body-1 mb-6"
+      >
+        You'll sign in with codes we email you, and can add a password if you like.
       </p>
 
       <v-form @submit.prevent="supported ? withPasskey() : withEmail()">
