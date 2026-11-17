@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chmbrb/PetCommunityProject/internal/abusecases"
 	"github.com/chmbrb/PetCommunityProject/internal/actorkeys"
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/config"
@@ -216,7 +217,9 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	emailer := auth.NewEmailer(cfg, st, sender, logger)
 	keys := jobs.NewKeyMaker(st, sealer, logger)
 	mediaSvc := media.NewService(st, objects, nil, media.Scanning{Scanner: scanner, Evidence: evidence}, logger)
-	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, logger)
+	// Purging only deletes evidence, so it doesn't need the sealer.
+	caseSvc := abusecases.New(st, objects.Evidence, nil)
+	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, caseSvc, logger)
 	if err != nil {
 		return err
 	}

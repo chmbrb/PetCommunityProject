@@ -39,6 +39,11 @@ var (
 // Statuses a case can have; "all" lists every case.
 var statuses = map[string]bool{"open": true, "reported": true, "closed": true}
 
+// ClosedGrace is how long a closed case waits before its evidence is purged, so a case
+// closed by mistake isn't gone within minutes. A reported case also waits for its
+// preservation date.
+const ClosedGrace = 30 * 24 * time.Hour
+
 // maxEvidence bounds what's read from the evidence bucket: uploads are limited to 15 MB,
 // and sealing adds a few bytes.
 const maxEvidence = 32 << 20
@@ -50,6 +55,8 @@ type Queries interface {
 	GetAbuseImageryCase(ctx context.Context, id uuid.UUID) (store.GetAbuseImageryCaseRow, error)
 	MarkAbuseImageryCaseReported(ctx context.Context, arg store.MarkAbuseImageryCaseReportedParams) (int64, error)
 	CloseAbuseImageryCase(ctx context.Context, id uuid.UUID) (int64, error)
+	ListPurgeableAbuseImageryCases(ctx context.Context, closedBefore *time.Time) ([]store.ListPurgeableAbuseImageryCasesRow, error)
+	DeletePurgeableAbuseImageryCase(ctx context.Context, arg store.DeletePurgeableAbuseImageryCaseParams) (int64, error)
 	InsertAuditEvent(ctx context.Context, arg store.InsertAuditEventParams) error
 }
 
@@ -74,7 +81,8 @@ type Service struct {
 }
 
 // New returns the service for a database, the evidence bucket, and the sealer made from
-// PC_SECRET_KEY. Only exporting evidence needs the bucket and sealer.
+// PC_SECRET_KEY. Exporting evidence needs the bucket and the sealer; purging needs
+// the bucket.
 func New(st *database.Store, evidence storage.Bucket, sealer *media.EvidenceSealer) *Service {
 	return newService(storeDB{st}, evidence, sealer, time.Now)
 }
@@ -209,6 +217,58 @@ func (s *Service) Close(ctx context.Context, id uuid.UUID, reason, operator stri
 			"operator": operator, "reason": reason, "previous_status": c.Status,
 		})
 	})
+}
+
+// PurgeAfter returns when a closed case's evidence may be purged: ClosedGrace after it
+// was closed, and not before its preservation date. It's zero for a case that isn't
+// closed.
+func PurgeAfter(closedAt, preserveUntil *time.Time) time.Time {
+	if closedAt == nil {
+		return time.Time{}
+	}
+	after := closedAt.Add(ClosedGrace)
+	if preserveUntil != nil && preserveUntil.After(after) {
+		after = *preserveUntil
+	}
+	return after
+}
+
+// Purge deletes the evidence and the case for closed cases that are past PurgeAfter
+// (ADR 0022), and returns how many it purged. The evidence goes first: if deleting the
+// case then fails, the next run finds the case again and finishes, since deleting
+// evidence that's already gone succeeds. The audit log keeps a record of each purge.
+func (s *Service) Purge(ctx context.Context) (int, error) {
+	closedBefore := s.now().Add(-ClosedGrace)
+	rows, err := s.db.ListPurgeableAbuseImageryCases(ctx, &closedBefore)
+	if err != nil {
+		return 0, err
+	}
+	purged := 0
+	for _, c := range rows {
+		if err := s.evidence.Delete(ctx, c.EvidenceKey); err != nil {
+			return purged, fmt.Errorf("delete evidence for case %s: %w", c.ID, err)
+		}
+		deleted := false
+		err := s.db.InTx(ctx, func(q Queries) error {
+			n, err := q.DeletePurgeableAbuseImageryCase(ctx, store.DeletePurgeableAbuseImageryCaseParams{
+				ID: c.ID, ClosedBefore: &closedBefore,
+			})
+			if err != nil || n == 0 {
+				return err
+			}
+			deleted = true
+			return audit(ctx, q, "abuse_imagery.purged", c.ID, map[string]any{
+				"media_id": c.MediaID, "report_reference": c.ReportReference,
+			})
+		})
+		if err != nil {
+			return purged, fmt.Errorf("delete case %s: %w", c.ID, err)
+		}
+		if deleted {
+			purged++
+		}
+	}
+	return purged, nil
 }
 
 func get(ctx context.Context, q Queries, id uuid.UUID) (store.GetAbuseImageryCaseRow, error) {

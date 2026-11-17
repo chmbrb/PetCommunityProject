@@ -137,6 +137,33 @@ func TestCaseLifecycleInPostgres(t *testing.T) {
 			t.Fatalf("audit actions = %v, want %v", actions, want)
 		}
 	}
+
+	// Just closed: the grace period hasn't passed, so a purge leaves it alone.
+	if _, err := svc.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Get(ctx, caseID); err != nil {
+		t.Fatalf("purged during the grace period: %v", err)
+	}
+	// Move the case back in time: reported 400 days ago, preserved until 35 days ago
+	// (still a year after the report, as the table requires), closed 31 days ago.
+	exec(`UPDATE abuse_imagery_cases
+	      SET reported_at = now() - interval '400 days', preserve_until = now() - interval '35 days',
+	          closed_at = now() - interval '31 days'
+	      WHERE id = $1`, caseID)
+	if _, err := svc.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Get(ctx, caseID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("case after purge: %v", err)
+	}
+	if _, ok := bucket.Objects()[key]; ok {
+		t.Error("evidence left after purge")
+	}
+	var purges int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE target_id = $1 AND action = 'abuse_imagery.purged'`, caseID).Scan(&purges); err != nil || purges != 1 {
+		t.Errorf("purge audit events = %d, %v", purges, err)
+	}
 }
 
 func containsCase(rows []store.ListAbuseImageryCasesRow, id uuid.UUID) bool {
