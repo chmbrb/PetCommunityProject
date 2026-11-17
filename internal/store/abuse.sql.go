@@ -7,9 +7,24 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const closeAbuseImageryCase = `-- name: CloseAbuseImageryCase :execrows
+UPDATE abuse_imagery_cases SET status = 'closed'
+WHERE id = $1 AND status IN ('open', 'reported')
+`
+
+// Closing keeps a reported case's preserve_until; evidence is only purged after it.
+func (q *Queries) CloseAbuseImageryCase(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, closeAbuseImageryCase, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const createAbuseImageryCase = `-- name: CreateAbuseImageryCase :execrows
 INSERT INTO abuse_imagery_cases (id, media_id, owner_actor_id, account_id, scanner, match_reference, sha256, evidence_key)
@@ -44,6 +59,74 @@ func (q *Queries) CreateAbuseImageryCase(ctx context.Context, arg CreateAbuseIma
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getAbuseImageryCase = `-- name: GetAbuseImageryCase :one
+SELECT c.id, c.media_id, c.owner_actor_id, c.account_id, c.scanner, c.match_reference,
+       c.sha256, c.evidence_key, c.status, c.report_reference, c.reported_at, c.preserve_until,
+       c.created_at,
+       a.handle, a.display_name,
+       acc.email AS account_email, acc.status AS account_status, acc.created_at AS account_created_at,
+       m.created_at AS uploaded_at, m.purpose AS upload_purpose, m.upload_bytes
+FROM abuse_imagery_cases c
+JOIN actors a ON a.id = c.owner_actor_id
+JOIN media_assets m ON m.id = c.media_id
+LEFT JOIN accounts acc ON acc.id = c.account_id
+WHERE c.id = $1
+`
+
+type GetAbuseImageryCaseRow struct {
+	ID               uuid.UUID
+	MediaID          uuid.UUID
+	OwnerActorID     uuid.UUID
+	AccountID        uuid.NullUUID
+	Scanner          string
+	MatchReference   *string
+	Sha256           []byte
+	EvidenceKey      string
+	Status           string
+	ReportReference  *string
+	ReportedAt       *time.Time
+	PreserveUntil    *time.Time
+	CreatedAt        time.Time
+	Handle           string
+	DisplayName      string
+	AccountEmail     *string
+	AccountStatus    *string
+	AccountCreatedAt *time.Time
+	UploadedAt       time.Time
+	UploadPurpose    string
+	UploadBytes      int64
+}
+
+// Everything a report asks about the case, the uploader, and the upload.
+func (q *Queries) GetAbuseImageryCase(ctx context.Context, id uuid.UUID) (GetAbuseImageryCaseRow, error) {
+	row := q.db.QueryRow(ctx, getAbuseImageryCase, id)
+	var i GetAbuseImageryCaseRow
+	err := row.Scan(
+		&i.ID,
+		&i.MediaID,
+		&i.OwnerActorID,
+		&i.AccountID,
+		&i.Scanner,
+		&i.MatchReference,
+		&i.Sha256,
+		&i.EvidenceKey,
+		&i.Status,
+		&i.ReportReference,
+		&i.ReportedAt,
+		&i.PreserveUntil,
+		&i.CreatedAt,
+		&i.Handle,
+		&i.DisplayName,
+		&i.AccountEmail,
+		&i.AccountStatus,
+		&i.AccountCreatedAt,
+		&i.UploadedAt,
+		&i.UploadPurpose,
+		&i.UploadBytes,
+	)
+	return i, err
 }
 
 const getActorAccountID = `-- name: GetActorAccountID :one
@@ -81,6 +164,80 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.Details,
 	)
 	return err
+}
+
+const listAbuseImageryCases = `-- name: ListAbuseImageryCases :many
+SELECT c.id, c.status, c.scanner, c.created_at, c.reported_at, c.preserve_until, a.handle
+FROM abuse_imagery_cases c
+JOIN actors a ON a.id = c.owner_actor_id
+WHERE $1::text IS NULL OR c.status = $1::text
+ORDER BY c.created_at
+`
+
+type ListAbuseImageryCasesRow struct {
+	ID            uuid.UUID
+	Status        string
+	Scanner       string
+	CreatedAt     time.Time
+	ReportedAt    *time.Time
+	PreserveUntil *time.Time
+	Handle        string
+}
+
+// For operators (petcommunity cases list); all statuses when status is null.
+func (q *Queries) ListAbuseImageryCases(ctx context.Context, status *string) ([]ListAbuseImageryCasesRow, error) {
+	rows, err := q.db.Query(ctx, listAbuseImageryCases, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAbuseImageryCasesRow
+	for rows.Next() {
+		var i ListAbuseImageryCasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.Scanner,
+			&i.CreatedAt,
+			&i.ReportedAt,
+			&i.PreserveUntil,
+			&i.Handle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markAbuseImageryCaseReported = `-- name: MarkAbuseImageryCaseReported :execrows
+UPDATE abuse_imagery_cases
+SET status = 'reported', report_reference = $2, reported_at = $3, preserve_until = $4
+WHERE id = $1 AND status = 'open'
+`
+
+type MarkAbuseImageryCaseReportedParams struct {
+	ID              uuid.UUID
+	ReportReference *string
+	ReportedAt      *time.Time
+	PreserveUntil   *time.Time
+}
+
+// Only an open case can be reported; the table checks preserve_until.
+func (q *Queries) MarkAbuseImageryCaseReported(ctx context.Context, arg MarkAbuseImageryCaseReportedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markAbuseImageryCaseReported,
+		arg.ID,
+		arg.ReportReference,
+		arg.ReportedAt,
+		arg.PreserveUntil,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const revokeAllAccountSessions = `-- name: RevokeAllAccountSessions :execrows

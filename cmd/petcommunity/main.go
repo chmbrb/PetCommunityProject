@@ -46,6 +46,7 @@ commands:
   worker           run background jobs (sending email, cleanup)
   migrate [up]     apply pending database migrations
   migrate status   list migrations and whether they are applied
+  cases            abuse imagery cases: list, show, export, report, close
   version          print the build version
   healthcheck      exit 0 if the local server answers /healthz
 `
@@ -90,6 +91,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		err = work(ctx, cfg, logger)
 	case "migrate":
 		err = migrate(ctx, cfg, args[1:], stdout, logger)
+	case "cases":
+		err = cases(ctx, cfg, args[1:], stdout, stderr)
+		if errors.Is(err, errCasesUsage) {
+			fmt.Fprint(stderr, casesUsage)
+			return 2
+		}
 	default:
 		fmt.Fprint(stderr, usage)
 		return 2
