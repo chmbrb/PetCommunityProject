@@ -46,7 +46,7 @@ A retried job finds the case already open and does nothing more.
 - Evidence is unreadable without `PC_SECRET_KEY`. Losing the key loses the evidence, which is one more reason to keep it backed up offline (PLAN.md Reminders).
 - A suspended account can't sign in. Its other content stays visible until moderation tools exist.
 - Follow-up work:
-  - **Operator tooling:** list open cases, decrypt evidence for the report, and record the report's reference. Until then this needs database access and a small script.
+  - **Operator tooling** (done): `petcommunity cases` lists cases, exports a case's evidence for the report (checked against its SHA-256, refused to a terminal), records the report's reference and preservation date, and closes cases, writing each export, report, and close to the audit log with the operator's name (DEVELOPMENT.md, "Abuse imagery cases").
   - **Notifying the operator:** today a match is only an error-level log line.
   - **Upload IP addresses:** a CyberTipline report asks for the uploader's IP address and upload time. Uploads don't record an IP address yet, and server logs are kept only briefly (PLAN.md Data Retention). Decide whether to record it per upload.
   - **The incident response runbook** in THREAT_MODEL.md's follow-ups, including who files the report and how quickly.
