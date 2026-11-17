@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
+	"github.com/chmbrb/PetCommunityProject/internal/store"
 )
 
 const testPassword = "a long and unusual passphrase"
@@ -91,6 +92,45 @@ func TestPasswordSignInKnownAndNewDevices(t *testing.T) {
 	e.do(other, "POST", "/api/v1/auth/logout", nil, nil)
 	if status, _ := e.passwordSignIn(other, email, testPassword, ""); status != http.StatusOK {
 		t.Errorf("second sign-in on the now-known device: status %d", status)
+	}
+}
+
+func TestPasswordSignInPaused(t *testing.T) {
+	e := newAuthTestEnv(t)
+	ctx := context.Background()
+	browser := e.newClient()
+	accountID, email := e.signUpWithPassword(browser)
+	e.do(browser, "POST", "/api/v1/auth/logout", nil, nil)
+
+	if err := e.store.SetFeatureFlag(ctx, store.SetFeatureFlagParams{Flag: "password_sign_in", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = e.store.SetFeatureFlag(ctx, store.SetFeatureFlagParams{Flag: "password_sign_in", Enabled: true})
+	})
+
+	// Even the right password on a known device is refused, and says why.
+	status, body := e.passwordSignIn(browser, email, testPassword, "")
+	if status != http.StatusForbidden || errorCode(body) != "password_sign_in_paused" {
+		t.Fatalf("paused password sign-in: status %d, body %v", status, body)
+	}
+	// The instance tells clients, so they can hide the password field.
+	if _, inst := e.do(browser, "GET", "/api/v1/instance", nil, nil); nested(inst, "features", "password_sign_in") != false {
+		t.Errorf("instance features = %v", inst["features"])
+	}
+	// Signing in with an emailed code still works.
+	if err := e.auth.RequestSignInLink(ctx, email); err != nil {
+		t.Fatal(err)
+	}
+	if e.queuedEmails(accountID, auth.PurposeSignIn) == 0 {
+		t.Error("no sign-in email queued while passwords are paused")
+	}
+
+	if err := e.store.SetFeatureFlag(ctx, store.SetFeatureFlagParams{Flag: "password_sign_in", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := e.passwordSignIn(browser, email, testPassword, ""); status != http.StatusOK {
+		t.Errorf("password sign-in after resuming: status %d", status)
 	}
 }
 

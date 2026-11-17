@@ -45,9 +45,19 @@ at once (existing accounts keep working); "on" opens them again. Recorded in the
 audit log.
 `
 
+//nolint:gosec // G101: the command's help text, not a credential
+const passwordSignInUsage = `usage: petcommunity password-sign-in [on|off --operator NAME --reason TEXT]
+
+Without arguments, says whether people can sign in with a password. "off" pauses
+password sign-ins at once, e.g. during a wave of account takeovers; email codes and
+passkeys keep working, and people can still set passwords. "on" resumes them.
+Recorded in the audit log.
+`
+
 var (
-	errAccountsUsage = errors.New("accounts usage")
-	errSignupsUsage  = errors.New("signups usage")
+	errAccountsUsage       = errors.New("accounts usage")
+	errSignupsUsage        = errors.New("signups usage")
+	errPasswordSignInUsage = errors.New("password-sign-in usage")
 )
 
 func accounts(ctx context.Context, cfg config.Config, args []string, stdout, stderr io.Writer) error {
@@ -175,23 +185,40 @@ func accounts(ctx context.Context, cfg config.Config, args []string, stdout, std
 }
 
 func signups(ctx context.Context, cfg config.Config, args []string, stdout, stderr io.Writer) error {
-	var open bool
+	return instanceSwitch(ctx, cfg, args, stdout, stderr, errSignupsUsage, (*accountadmin.Service).SignupsOpen,
+		(*accountadmin.Service).SetSignups, "sign-ups are open", "sign-ups are closed; existing accounts keep working")
+}
+
+func passwordSignIn(ctx context.Context, cfg config.Config, args []string, stdout, stderr io.Writer) error {
+	return instanceSwitch(ctx, cfg, args, stdout, stderr, errPasswordSignInUsage, (*accountadmin.Service).PasswordSignInOn,
+		(*accountadmin.Service).SetPasswordSignIn, "password sign-in is on",
+		"password sign-in is paused; email codes and passkeys still work")
+}
+
+// instanceSwitch runs a command that shows an instance switch, or turns it "on" or
+// "off" with --operator and --reason.
+func instanceSwitch(ctx context.Context, cfg config.Config, args []string, stdout, stderr io.Writer, usage error,
+	get func(*accountadmin.Service, context.Context) (bool, error),
+	set func(*accountadmin.Service, context.Context, bool, string, string) error,
+	onText, offText string,
+) error {
+	var on bool
 	switch {
 	case len(args) == 0:
 	case args[0] == "on":
-		open = true
+		on = true
 	case args[0] == "off":
 	default:
-		return errSignupsUsage
+		return usage
 	}
 	var operator, reason string
 	if len(args) > 0 {
-		fs := flag.NewFlagSet("signups "+args[0], flag.ContinueOnError)
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		fs.StringVar(&operator, "operator", "", "your name, for the audit log")
 		fs.StringVar(&reason, "reason", "", "why, for the audit log")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
-			return errSignupsUsage
+			return usage
 		}
 	}
 
@@ -202,18 +229,18 @@ func signups(ctx context.Context, cfg config.Config, args []string, stdout, stde
 	defer closeDB()
 
 	if len(args) > 0 {
-		if err := svc.SetSignups(ctx, open, reason, operator); err != nil {
+		if err := set(svc, ctx, on, reason, operator); err != nil {
 			return err
 		}
 	}
-	now, err := svc.SignupsOpen(ctx)
+	now, err := get(svc, ctx)
 	if err != nil {
 		return err
 	}
 	if now {
-		fmt.Fprintln(stdout, "sign-ups are open")
+		fmt.Fprintln(stdout, onText)
 	} else {
-		fmt.Fprintln(stdout, "sign-ups are closed; existing accounts keep working")
+		fmt.Fprintln(stdout, offText)
 	}
 	return nil
 }

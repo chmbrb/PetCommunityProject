@@ -142,6 +142,10 @@ Any of those settings also works without `_FILE`, as a plain environment variabl
 
 It's a **preview**: backups only reach the server's own disk until the off-site copy is set up (PLAN.md, Reminders), and there are no moderation tools yet, so don't run an instance with public users on it.
 
+### Logs
+
+Every service logs to Docker's `json-file` driver, capped in `compose.yaml` (`x-logging`) so logs can't fill the disk: Docker keeps up to five 50 MB files per container. Podman applies the size cap but not the file count, so it keeps only the latest 50 MB. Read them with `docker compose logs`, and save them before restarting anything during an incident (INCIDENT_RESPONSE.md).
+
 ### Trying the production stack locally
 
 `make local-up` runs the real production setup on your machine: the same images, `compose.yaml`, production mode and its safety checks, behind Caddy. The only difference is that email goes to Mailpit instead of a provider. `compose.local.yaml` holds the changes, `deploy/local/local.env` the settings, and `deploy/local/secrets` the secret files: all fixed and public, which is fine only for this throwaway stack.
@@ -254,6 +258,8 @@ Sign-in and sign-up emails carry both a link and a 6-digit code for the same sig
 Passwords are optional (ADR 0014). New ones are checked against known data breaches with the Have I Been Pwned range API, which only ever receives the first 5 characters of the password's SHA-1 hash. The check is on by default, in development too; if the service can't be reached, the password is accepted and a warning is logged. Set `PC_BREACHED_PASSWORD_CHECK=false` for an instance without outbound internet access.
 
 A password sign-in from a browser or app that hasn't signed in to the account before also needs a code emailed to the account. Browsers are recognized by the `pc_device` cookie (`__Host-pc_device` in production), the apps by the `device_token` returned at sign-in and sent back in the `X-Device-Token` header.
+
+Operators can pause password sign-ins during a wave of account takeovers: `petcommunity password-sign-in off` (the `password_sign_in` feature flag; INCIDENT_RESPONSE.md). The API then refuses them with `password_sign_in_paused`, and the sign-in page hides the password field. Email codes and passkeys keep working, and people can still set a password.
 
 ### Two-step sign-in
 

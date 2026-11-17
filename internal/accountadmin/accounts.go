@@ -2,8 +2,9 @@
 
 // Package accountadmin is the operator tooling for accounts until moderation tools
 // exist (Phase 2): finding an account, suspending and reinstating it, removing a
-// passkey after a takeover, and stopping sign-ups (INCIDENT_RESPONSE.md). Every change
-// is written to the audit log with the operator's name.
+// passkey after a takeover, stopping sign-ups, and pausing password sign-ins
+// (INCIDENT_RESPONSE.md). Every change is written to the audit log with the
+// operator's name.
 package accountadmin
 
 import (
@@ -205,17 +206,33 @@ func (s *Service) SignupsOpen(ctx context.Context) (bool, error) {
 // SetSignups opens or closes sign-ups. It takes effect at once; existing accounts
 // keep working either way.
 func (s *Service) SetSignups(ctx context.Context, open bool, reason, operator string) error {
+	return s.setSwitch(ctx, "open_registration", open, "instance.signups_opened", "instance.signups_closed", reason, operator)
+}
+
+// PasswordSignInOn reports whether people can sign in with a password.
+func (s *Service) PasswordSignInOn(ctx context.Context) (bool, error) {
+	return s.db.FeatureFlagEnabled(ctx, "password_sign_in")
+}
+
+// SetPasswordSignIn pauses or resumes password sign-ins, such as during a wave of
+// account takeovers. It takes effect at once; email codes and passkeys keep working.
+func (s *Service) SetPasswordSignIn(ctx context.Context, on bool, reason, operator string) error {
+	return s.setSwitch(ctx, "password_sign_in", on, "instance.password_sign_in_resumed", "instance.password_sign_in_paused", reason, operator)
+}
+
+// setSwitch turns an instance feature flag on or off, recording which way it went.
+func (s *Service) setSwitch(ctx context.Context, flag string, on bool, onAction, offAction, reason, operator string) error {
 	reason, err := need(reason, operator)
 	if err != nil {
 		return err
 	}
 	return s.db.InTx(ctx, func(q Queries) error {
-		if err := q.SetFeatureFlag(ctx, store.SetFeatureFlagParams{Flag: "open_registration", Enabled: open}); err != nil {
+		if err := q.SetFeatureFlag(ctx, store.SetFeatureFlagParams{Flag: flag, Enabled: on}); err != nil {
 			return err
 		}
-		action := "instance.signups_closed"
-		if open {
-			action = "instance.signups_opened"
+		action := offAction
+		if on {
+			action = onAction
 		}
 		// The instance itself has no ID; the nil UUID stands for it.
 		return audit(ctx, q, action, "instance", uuid.Nil, map[string]any{"operator": operator, "reason": reason})

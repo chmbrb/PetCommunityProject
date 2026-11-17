@@ -34,7 +34,7 @@ Keep this table, filled in, with the offline copy of the instance's keys, not on
 5. **Decide who must be told,** and by when (each playbook says). If in doubt, ask legal counsel early: some deadlines start when you learned of the incident.
 6. **Review it afterwards** (see [After an incident](#after-an-incident)).
 
-What you'll have to go on today: the audit log (every case action, suspension, and session revocation), the database, and the containers' own logs. Request logs with IP addresses aren't kept: Caddy doesn't write an access log, uploads don't record an IP address (ADR 0022), and Docker's logs are only as old as the containers.
+What you'll have to go on today: the audit log (every case action, suspension, and session revocation), the database, and the containers' own logs. Request logs with IP addresses aren't kept: Caddy doesn't write an access log, uploads don't record an IP address (ADR 0022), and container logs are capped at 50 MB per container (Docker keeps up to five such files; Podman only the latest), so on a busy instance they reach back days, not weeks. Save them early.
 
 ## Operator commands
 
@@ -48,12 +48,15 @@ docker compose run --rm -T worker accounts reinstate --operator "Your Name" --re
 docker compose run --rm -T worker accounts remove-passkey --operator "Your Name" --reason "added by attacker" ACCOUNT_ID PASSKEY_ID
 docker compose run --rm -T worker signups off --operator "Your Name" --reason "scam wave"
 docker compose run --rm -T worker signups on --operator "Your Name" --reason "wave over"
+docker compose run --rm -T worker password-sign-in off --operator "Your Name" --reason "takeover wave"
+docker compose run --rm -T worker password-sign-in on --operator "Your Name" --reason "wave over"
 ```
 
 - **`suspend`** stops the account signing in and signs it out everywhere at once.
 - **`reinstate`** lifts a suspension. It refuses while an abuse imagery case is open or reported for the account: close the case first.
 - **`remove-passkey`** sends no email (suspended accounts get none), so tell the owner yourself. It won't remove the only passkey of an account whose email isn't confirmed, since it couldn't sign in without it.
 - **`signups off`** stops new accounts at once; existing accounts keep working. `signups` on its own says whether sign-ups are open.
+- **`password-sign-in off`** pauses password sign-ins at once. Email codes and passkeys keep working, and the sign-in page hides the password field. `password-sign-in` on its own says whether it's on.
 
 For anything else, such as an account's audit history, connect to the database from the server:
 
@@ -106,7 +109,7 @@ A person may also report an image that no scanner matched.
 5. **Undo what the attacker did** with the account. Today that's limited to its profile and photo; once listings and messages exist (Phase 2), check those, and warn anyone the attacker contacted.
 6. **If it's a verified organization** (Phase 2), treat it as High: check its listings and applications too, and post a notice if adopters may have been contacted.
 
-Most takeovers start with a reused password. If several accounts are taken over at once, treat it as a [Scam or impersonation wave](#scam-or-impersonation-wave), and consider stopping password sign-ins for a while (a follow-up below).
+Most takeovers start with a reused password. If several accounts are taken over at once, treat it as a [Scam or impersonation wave](#scam-or-impersonation-wave), and consider pausing password sign-ins (`password-sign-in off`) until it's over. Everyone can still sign in with an emailed code.
 
 ### Data breach or server compromise
 
@@ -146,12 +149,11 @@ Within two weeks, write a short review in the incident log: what happened, how i
 
 ## Gaps found while writing this
 
-Known weak points, in rough order of importance. Each one is also tracked where it belongs. (Alerting the operator about a match was the first; it's done.)
+Known weak points, in rough order of importance. Each one is also tracked where it belongs. (Alerting the operator about a match, capping container logs, and pausing password sign-ins are done.)
 
 - **There's no backup person**, so a serious incident depends on one person being reachable. It stays that way while the project lead runs everything alone (see [Roles and contacts](#roles-and-contacts)).
 - **A reported image that no scanner matched can't be turned into a case** with preserved evidence.
 - **No moderation tools yet:** the `accounts` and `signups` commands cover suspending, reinstating, removing a passkey, and stopping sign-ups, but there's no way yet to review reports or act on content.
 - **`PC_SECRET_KEY` and `mfa_key` can't be rotated**, and rotating the other secrets isn't scripted.
-- **Little to investigate with:** no request logs, no upload IP addresses (ADR 0022), and container logs kept only as long as Docker keeps them.
-- **No way to stop password sign-ins** temporarily during a wave of takeovers.
+- **Little to investigate with:** no request logs, no upload IP addresses (ADR 0022), and container logs capped at 50 MB per container.
 - **No templates** for breach notices or for messages to affected users.
