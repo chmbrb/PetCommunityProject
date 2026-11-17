@@ -105,7 +105,8 @@ func TestRotationInPostgres(t *testing.T) {
 	actorID := uuid.New()
 	mediaID, caseID := uuid.New(), uuid.New()
 	sum := sha256.Sum256(caseID[:])
-	exec(`INSERT INTO actors (id, type, handle, display_name) VALUES ($1, 'person', $2, 'Evidence Test')`, actorID, "e_"+actorID.String()[:8])
+	// An organization, which needs no account (person actors must have one).
+	exec(`INSERT INTO actors (id, type, handle, display_name) VALUES ($1, 'organization', $2, 'Evidence Test')`, actorID, "e_"+actorID.String()[:8])
 	exec(`INSERT INTO media_assets (id, owner_actor_id, purpose, status, upload_bytes) VALUES ($1, $2, 'avatar', 'quarantined', 1)`, mediaID, actorID)
 	exec(`INSERT INTO abuse_imagery_cases (id, media_id, owner_actor_id, scanner, sha256, evidence_key) VALUES ($1, $2, $3, 'hashlist', $4, $5)`,
 		caseID, mediaID, actorID, sum[:], "media/"+mediaID.String())
