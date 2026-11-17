@@ -1,6 +1,6 @@
 # Incident response
 
-Status: **Draft**. What to do, in order, when something goes wrong on an instance. Like [COMPLIANCE.md](COMPLIANCE.md), it's a starting point for legal review, not legal advice: the legal steps below need a lawyer's confirmation before they're relied on. Items marked **To decide** need an answer before the instance has public users.
+Status: **Draft**. What to do, in order, when something goes wrong on an instance. Like [COMPLIANCE.md](COMPLIANCE.md), it's a starting point for legal review, not legal advice: the legal steps below need a lawyer's confirmation before they're relied on. Items marked **None yet** are filled in once more people take part in the project (see [Roles and contacts](#roles-and-contacts)).
 
 It's written for the operator of one instance, which today is the project lead running the main instance. Each operator is responsible for its own instance and its own users (COMPLIANCE.md, Phase 5). Security problems in the project's code follow [SECURITY.md](../SECURITY.md) instead; the operator side of a vulnerability is in [Vulnerability in the code](#vulnerability-in-the-code).
 
@@ -8,11 +8,13 @@ It's written for the operator of one instance, which today is the project lead r
 
 | Role | Who | Notes |
 |---|---|---|
-| Incident lead | The instance operator | Runs every step below, and files the reports the law requires |
-| Backup | **To decide** | Someone who can act when the operator can't. Until there is one, a serious incident waits for one person |
-| Legal counsel | **To decide** | Needed for any data breach, and before a first CyberTipline report |
+| Incident lead | The instance operator: the project lead | Runs every step below, and files the reports the law requires |
+| Backup | **None yet** | Someone who can act when the operator can't. Until there is one, a serious incident waits for one person |
+| Legal counsel | **None yet** | Needed for any data breach, and before a first CyberTipline report; found when one of those comes up |
 | NCMEC CyberTipline | The instance's electronic service provider registration | Register before connecting a scanning service (COMPLIANCE.md, Phase 1) |
 | Hosting, email, and storage providers | Their abuse and support contacts | Keep the account details offline, with the keys |
+
+**For now, it's one person.** The project lead runs the project and the main instance alone, so every role above falls to them. Update this table once more people take part in the project: a backup who can act on an incident, legal counsel, and their contact details. Do it before inviting outside contributors or operators.
 
 Keep this table, filled in, with the offline copy of the instance's keys, not only in the repository.
 
@@ -161,7 +163,7 @@ Within two weeks, write a short review in the incident log: what happened, how i
 Known weak points, in rough order of importance. Each one is also tracked where it belongs:
 
 - **Nobody is notified of an abuse imagery match**; it's only a log line (ADR 0022, follow-ups).
-- **There's no backup person**, so a serious incident depends on one person being reachable.
+- **There's no backup person**, so a serious incident depends on one person being reachable. It stays that way while the project lead runs everything alone (see [Roles and contacts](#roles-and-contacts)).
 - **A reported image that no scanner matched can't be turned into a case** with preserved evidence.
 - **No moderation tools:** suspending, finding accounts, and stopping sign-ups mean SQL by hand.
 - **`PC_SECRET_KEY` and `mfa_key` can't be rotated**, and rotating the other secrets isn't scripted.
