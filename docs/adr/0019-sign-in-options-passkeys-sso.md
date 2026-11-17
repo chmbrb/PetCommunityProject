@@ -38,7 +38,7 @@ Many people, especially prospective adopters, give up when asked to create yet a
 - **App Store guideline 4.8 compliance:** the iOS app starts **without Google sign-in**, so the guideline doesn't apply. Once the project's App Store account exists, add Sign in with Apple to the iOS app, then Google can be added there too. (A further option, to confirm with App Review, is presenting passkey signup with an optional, private email as the equivalent option.)
 - **Apple specifics:** support "Hide My Email" relay addresses (register the instance's sending domain with Apple's relay; don't use relay addresses for duplicate-account checks). On account deletion, revoke the user's Apple tokens, as Apple requires.
 - **Minimal scopes:** request only `openid email` (plus `name` on first Apple sign-in). No contacts, no profile photos, no access tokens kept beyond what deletion and revocation require.
-- **Mobile apps:** use native sign-in sheets (Google Sign-In, Sign in with Apple) through Capacitor plugins, then exchange the provider's ID token with the selected instance's API. How an instance accepts tokens issued to the shared app (audience = the official app ID) is to be settled in a Phase 1 spike.
+- **Mobile apps:** use native sign-in sheets (Google Sign-In, Sign in with Apple) through Capacitor plugins, then exchange the provider's ID token with the selected instance's API. How an instance accepts tokens issued to the shared app (audience = the official app ID) is decided in [0024](0024-google-apple-sign-in-in-the-apps.md).
 
 ## Consequences
 
