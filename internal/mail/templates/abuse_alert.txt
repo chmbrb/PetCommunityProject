@@ -1,0 +1,16 @@
+An upload on {{.InstanceName}} matched known abuse imagery, and a case was opened for the legally required report.
+
+Case: {{.CaseID}}
+Opened: {{.OpenedAt}}
+
+The upload was quarantined and encrypted as evidence, and its account was suspended and signed out. Don't look for the image: nobody needs to see it.
+
+Next steps (docs/INCIDENT_RESPONSE.md, "Abuse imagery"):
+
+1. Read the case:
+   docker compose run --rm -T worker cases show {{.CaseID}}
+2. Report it to NCMEC's CyberTipline as soon as reasonably possible; the project's target is within 24 hours.
+3. Record the report:
+   docker compose run --rm -T worker cases report --operator "Your Name" --reference REPORT_ID {{.CaseID}}
+
+This email is sent to PC_ABUSE_ALERT_EMAIL. It holds nothing about the upload or the account: those stay on the instance.

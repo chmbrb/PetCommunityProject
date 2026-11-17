@@ -47,7 +47,7 @@ A retried job finds the case already open and does nothing more.
 - A suspended account can't sign in. Its other content stays visible until moderation tools exist.
 - Follow-up work:
   - **Operator tooling** (done): `petcommunity cases` lists cases, exports a case's evidence for the report (checked against its SHA-256, refused to a terminal), records the report's reference and preservation date, and closes cases, writing each export, report, and close to the audit log with the operator's name (DEVELOPMENT.md, "Abuse imagery cases").
-  - **Notifying the operator:** today a match is only an error-level log line.
+  - **Notifying the operator** (done): a match queues an email to `PC_ABUSE_ALERT_EMAIL` (`abuse@` the instance's domain by default) in the same transaction as its case, so every case gets exactly one alert. It's plain text and holds only the case ID and the next steps, never anything about the upload or the account.
   - **Upload IP addresses:** a CyberTipline report asks for the uploader's IP address and upload time. Uploads don't record an IP address yet, and server logs are kept only briefly (PLAN.md Data Retention). Decide whether to record it per upload.
   - **The incident response runbook** (done, as a draft for legal review): [INCIDENT_RESPONSE.md](../INCIDENT_RESPONSE.md), "Abuse imagery". The operator files the report, with a target of 24 hours from learning of a match.
   - **Purging after preservation** (done): a daily worker job deletes the evidence and the case for closed cases past `preserve_until`, and no sooner than 30 days after closing, so a case closed by mistake can still be exported. Each purge is written to the audit log; the quarantined upload's record stays.

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -127,6 +128,9 @@ type AbuseScan struct {
 	Scanner string
 	// HashListFile is ScannerHashList's list: one MD5, SHA-1, or SHA-256 hex digest per line.
 	HashListFile string
+	// AlertEmail is told when a match opens a case: abuse@ the instance's domain by
+	// default, or abuse@localhost in development, which Mailpit catches.
+	AlertEmail string
 }
 
 // Enabled reports whether a scanner is configured.
@@ -277,6 +281,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.Storage.EvidenceBucket = valueOr(getenv("PC_S3_EVIDENCE_BUCKET"), cfg.Storage.EvidenceBucket)
 	cfg.AbuseScan.Scanner = valueOr(getenv("PC_ABUSE_SCANNER"), ScannerNone)
 	cfg.AbuseScan.HashListFile = getenv("PC_ABUSE_HASH_LIST_FILE")
+	cfg.AbuseScan.AlertEmail = valueOr(getenv("PC_ABUSE_ALERT_EMAIL"), abuseAlertDefault(cfg.InstanceDomain))
 
 	if pw := readSecret("PC_DATABASE_PASSWORD"); pw != "" && cfg.DatabaseURL != "" {
 		u, err := withPassword(cfg.DatabaseURL, pw)
@@ -384,6 +389,10 @@ func (c Config) validate() error {
 		errs = append(errs, fmt.Errorf("PC_ABUSE_SCANNER must be %s or %s, got %q", ScannerNone, ScannerHashList, c.AbuseScan.Scanner))
 	}
 	if c.AbuseScan.Enabled() {
+		// The address must be a bare one, so the alert can't go somewhere unexpected.
+		if a, err := mail.ParseAddress(c.AbuseScan.AlertEmail); err != nil || a.Address != c.AbuseScan.AlertEmail {
+			errs = append(errs, fmt.Errorf("PC_ABUSE_ALERT_EMAIL must be an email address when a scanner is configured, got %q", c.AbuseScan.AlertEmail))
+		}
 		if ev := c.Storage.EvidenceBucket; ev == "" || ev == c.Storage.QuarantineBucket || ev == c.Storage.MediaBucket {
 			errs = append(errs, errors.New("PC_S3_EVIDENCE_BUCKET must be set and differ from the other buckets when a scanner is configured (evidence must never expire or be public)"))
 		}
@@ -514,6 +523,14 @@ func mailDefaults(env Environment) Mail {
 		Security: MailNone,
 		From:     "PetCommunityProject <noreply@localhost>",
 	}
+}
+
+// abuseAlertDefault is where match alerts go unless PC_ABUSE_ALERT_EMAIL says otherwise.
+func abuseAlertDefault(domain string) string {
+	if domain == "" {
+		return "abuse@localhost"
+	}
+	return "abuse@" + domain
 }
 
 func splitList(v string) []string {

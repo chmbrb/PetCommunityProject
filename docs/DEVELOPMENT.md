@@ -29,7 +29,7 @@ To try sign-up without a real authenticator, use Chrome DevTools → More tools 
 
 ### Email in development
 
-Mailpit catches every email the worker sends. Read them at http://localhost:8025. Nothing leaves your machine. Email is only sent while `make worker` is running; queued emails go out as soon as it starts.
+Mailpit catches every email the worker sends, including abuse imagery alerts (to `abuse@localhost`). Read them at http://localhost:8025. Nothing leaves your machine. Email is only sent while `make worker` is running; queued emails go out as soon as it starts.
 
 `make help` lists every target.
 
@@ -139,7 +139,7 @@ Passwords and keys live in files in `secrets/` (or `PC_SECRETS_DIR`), not in `.e
 
 Any of those settings also works without `_FILE`, as a plain environment variable (setting both is an error). Development uses that, with public development values.
 
-It's a **preview**: backups (ADR 0016) and media storage (ADR 0010) aren't wired in yet, so don't run a real instance on it until they are.
+It's a **preview**: backups only reach the server's own disk until the off-site copy is set up (PLAN.md, Reminders), and there are no moderation tools yet, so don't run an instance with public users on it.
 
 ### Trying the production stack locally
 
@@ -163,7 +163,7 @@ Uploads go to a private quarantine bucket; the worker decodes and re-encodes the
 
 The image codecs must use their memory-safe Go builds: always build with `-tags nodynamic`. The Makefile, Dockerfile, CI, and golangci-lint do this; when running `go` directly, use `GOFLAGS=-tags=nodynamic`. Without the tag, a machine with libwebp, libavif, or libheif development files installed would decode uploads with C code, and the worker refuses to start.
 
-Uploads are checked against known abuse imagery before anything else happens (ADR 0022). `PC_ABUSE_SCANNER` chooses the scanner: `none` (the default), or `hashlist` with `PC_ABUSE_HASH_LIST_FILE` naming a file of MD5, SHA-1, or SHA-256 hex digests, one per line. No perceptual provider is connected yet, so only accounts with a confirmed email can upload. On a match, the original is encrypted with `PC_SECRET_KEY` into the evidence bucket (`PC_S3_EVIDENCE_BUCKET`, required once a scanner is set: private, with nothing that expires its objects), a row is added to `abuse_imagery_cases`, and the uploader's account is suspended and signed out. To try it in development, put the SHA-256 of a test image (`sha256sum photo.jpg`) in a file and run the worker with `PC_ABUSE_SCANNER=hashlist PC_ABUSE_HASH_LIST_FILE=<file>`.
+Uploads are checked against known abuse imagery before anything else happens (ADR 0022). `PC_ABUSE_SCANNER` chooses the scanner: `none` (the default), or `hashlist` with `PC_ABUSE_HASH_LIST_FILE` naming a file of MD5, SHA-1, or SHA-256 hex digests, one per line. No perceptual provider is connected yet, so only accounts with a confirmed email can upload. On a match, the original is encrypted with `PC_SECRET_KEY` into the evidence bucket (`PC_S3_EVIDENCE_BUCKET`, required once a scanner is set: private, with nothing that expires its objects), a row is added to `abuse_imagery_cases`, the uploader's account is suspended and signed out, and an alert is emailed to `PC_ABUSE_ALERT_EMAIL` (`abuse@` the instance's domain by default). To try it in development, put the SHA-256 of a test image (`sha256sum photo.jpg`) in a file and run the worker with `PC_ABUSE_SCANNER=hashlist PC_ABUSE_HASH_LIST_FILE=<file>`.
 
 In development, MinIO serves images at http://localhost:9000/media/, and the local production stack serves them through Caddy at https://localhost:8443/media/.
 

@@ -99,6 +99,8 @@ services:
       # Checks uploads for known abuse imagery (ADR 0022); see .env.example.
       PC_ABUSE_SCANNER: ${PC_ABUSE_SCANNER:-none}
       PC_ABUSE_HASH_LIST_FILE: ${PC_ABUSE_HASH_LIST_FILE:-}
+      # Where match alerts go; empty means abuse@ PC_INSTANCE_DOMAIN.
+      PC_ABUSE_ALERT_EMAIL: ${PC_ABUSE_ALERT_EMAIL:-}
     secrets: [db_password, s3_access_key, s3_secret_key, secret_key, smtp_password]
     volumes:
       # Hash lists for PC_ABUSE_SCANNER=hashlist, at /run/hash-lists/<file>.

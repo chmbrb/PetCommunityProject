@@ -151,9 +151,26 @@ func TestAbuseScan(t *testing.T) {
 	if cfg.Storage.EvidenceBucket != "evidence" {
 		t.Errorf("EvidenceBucket = %q, want the default", cfg.Storage.EvidenceBucket)
 	}
+	if cfg.AbuseScan.AlertEmail != "abuse@localhost" {
+		t.Errorf("AlertEmail = %q, want abuse@localhost in development", cfg.AbuseScan.AlertEmail)
+	}
 	base["PC_S3_EVIDENCE_BUCKET"] = "quarantine"
 	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_S3_EVIDENCE_BUCKET") {
 		t.Errorf("evidence in the quarantine bucket, which expires objects: err = %v", err)
+	}
+	delete(base, "PC_S3_EVIDENCE_BUCKET")
+
+	base["PC_INSTANCE_DOMAIN"] = "pets.example.org"
+	if cfg, err := Load(env(base)); err != nil || cfg.AbuseScan.AlertEmail != "abuse@pets.example.org" {
+		t.Errorf("AlertEmail = %q, err %v; want abuse@ the instance domain", cfg.AbuseScan.AlertEmail, err)
+	}
+	base["PC_ABUSE_ALERT_EMAIL"] = "Abuse Team <abuse@pets.example.org>"
+	if _, err := Load(env(base)); err == nil || !strings.Contains(err.Error(), "PC_ABUSE_ALERT_EMAIL") {
+		t.Errorf("alert address with a display name: err = %v", err)
+	}
+	base["PC_ABUSE_ALERT_EMAIL"] = "safety@pets.example.org"
+	if cfg, err := Load(env(base)); err != nil || cfg.AbuseScan.AlertEmail != "safety@pets.example.org" {
+		t.Errorf("AlertEmail = %q, err %v; want the configured address", cfg.AbuseScan.AlertEmail, err)
 	}
 }
 

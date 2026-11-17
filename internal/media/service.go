@@ -52,6 +52,23 @@ func (ProcessJob) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueMedia, MaxAttempts: 3}
 }
 
+// AbuseAlertJob tells the operator that a match opened an abuse imagery case
+// (ADR 0022), so the report isn't left waiting for someone to read the logs. It holds
+// only the case: nothing about the upload or its owner goes into an email.
+type AbuseAlertJob struct {
+	CaseID   uuid.UUID `json:"case_id"`
+	OpenedAt time.Time `json:"opened_at"`
+}
+
+// Kind identifies the job type to River.
+func (AbuseAlertJob) Kind() string { return "abuse_imagery_alert" }
+
+// InsertOpts retries for a long time: an alert that never arrives leaves a report
+// unfiled.
+func (AbuseAlertJob) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 25}
+}
+
 // Asset is an uploaded image as its owner sees it.
 type Asset struct {
 	ID              uuid.UUID
@@ -321,6 +338,9 @@ func (s *Service) preserveMatch(ctx context.Context, ownerActorID, id uuid.UUID,
 	if s.scanning.Evidence == nil || s.storage.Evidence == nil {
 		return errors.New("an upload matched known abuse imagery, but no evidence storage is configured")
 	}
+	if s.queue == nil {
+		return errors.New("an upload matched known abuse imagery, but there's no job queue to alert the operator")
+	}
 	sealed, err := s.scanning.Evidence.Seal(id, original)
 	if err != nil {
 		return err
@@ -335,7 +355,7 @@ func (s *Service) preserveMatch(ctx context.Context, ownerActorID, id uuid.UUID,
 	sum := sha256.Sum256(original)
 	caseID := uuid.Must(uuid.NewV7())
 	var accountID uuid.NullUUID
-	err = s.db.InTx(ctx, func(_ pgx.Tx, q *store.Queries) error {
+	err = s.db.InTx(ctx, func(tx pgx.Tx, q *store.Queries) error {
 		if accountID, err = q.GetActorAccountID(ctx, ownerActorID); err != nil {
 			return err
 		}
@@ -355,6 +375,10 @@ func (s *Service) preserveMatch(ctx context.Context, ownerActorID, id uuid.UUID,
 		}
 		if _, err := q.MarkMediaQuarantined(ctx, id); err != nil {
 			return err
+		}
+		// In the same transaction as the case, so every case gets exactly one alert.
+		if _, err := s.queue.InsertTx(ctx, tx, AbuseAlertJob{CaseID: caseID, OpenedAt: time.Now().UTC()}, nil); err != nil {
+			return fmt.Errorf("queue the operator alert: %w", err)
 		}
 		if err := audit(ctx, q, "abuse_imagery.matched", "media", id, map[string]any{
 			"case_id": caseID, "scanner": s.scanning.Scanner.Name(), "owner_actor_id": ownerActorID,
