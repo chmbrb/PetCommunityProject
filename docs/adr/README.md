@@ -32,7 +32,7 @@ Decisions the project owner has already made in [PLAN.md](../PLAN.md) are `Accep
 | [0022](0022-abuse-imagery-scanning-and-evidence.md) | Abuse imagery scanning and evidence preservation | Accepted |
 | [0023](0023-mobile-instance-picker.md) | Mobile instance picker and app sessions | Accepted |
 | [0024](0024-google-apple-sign-in-in-the-apps.md) | Google and Apple sign-in in the shared apps | Accepted |
-| [0025](0025-rotating-encryption-keys.md) | Rotating the instance's encryption keys | Proposed |
+| [0025](0025-rotating-encryption-keys.md) | Rotating the instance's encryption keys | Accepted |
 
 ## Writing a new ADR
 

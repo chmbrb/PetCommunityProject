@@ -1,6 +1,6 @@
 # 0025. Rotating the instance's encryption keys
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-17
 - **Related:** [0012](0012-activitypub-shaped-model-federation-deferred.md) (actor keys), [0014](0014-authentication-sessions-mfa.md) (authenticator secrets), [0016](0016-backups-wal-g.md) (backups), [0022](0022-abuse-imagery-scanning-and-evidence.md) (evidence); INCIDENT_RESPONSE.md, "Data breach or server compromise"; THREAT_MODEL.md I5
 
