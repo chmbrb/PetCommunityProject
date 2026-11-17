@@ -1,6 +1,6 @@
 # 0024. Google and Apple sign-in in the shared apps
 
-- **Status:** Proposed
+- **Status:** Accepted (see Review: to be revisited once real tokens can be tested)
 - **Date:** 2026-11-16
 - **Details:** the "Mobile apps" point of [0019](0019-sign-in-options-passkeys-sso.md), left to a Phase 1 spike. The rest of 0019 stands.
 - **Related:** [0014](0014-authentication-sessions-mfa.md), [0017](0017-instance-feature-flags.md), [0018](0018-mobile-apps-capacitor.md), [0023](0023-mobile-instance-picker.md); THREAT_MODEL.md S3–S7, M4; PLAN.md Phase 1 (spike) and Phase 2 (Google and Apple sign-in)
@@ -58,6 +58,15 @@ A token obtained through M carries a hash of M's origin, so L rejects it, even w
 - Google's `sub` is the same at every instance, so instances that compare notes could tell that two accounts belong to the same Google user. This is true of Google sign-in anywhere and goes in the privacy policy. Apple's identifiers are per team, which limits this for Apple.
 - The project takes on two operational tasks: registering instances' email domains for Apple's relay, and running the revocation service. Both wait for Sign in with Apple in the app.
 - Debug builds are signed with a different certificate, so Google sign-in in them needs that certificate registered as its own Android client.
+
+## Review
+
+This was decided from the providers' documentation, without real tokens: it needs the project's Google Cloud project and Apple Developer account, which don't exist yet. Accepted for now, and revisited (amended, or replaced by a new ADR) if any of these turn out differently:
+
+- **The first sign-ins with real tokens** (Phase 2): Google tokens from the Android app don't carry the expected `aud`, `azp`, or `nonce`, or Apple's identity token doesn't carry the nonce as passed.
+- **The plugin:** no maintained Capacitor plugin passes a nonce on both platforms.
+- **Apple's requirements:** App Review asks for something else on account deletion, or the revocation service can't stay as narrow as described.
+- **Operating it:** registering instances' email domains with Apple, or running the revocation service, proves more than the project can take on.
 
 ## Alternatives considered
 

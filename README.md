@@ -2,7 +2,7 @@
 
 A federated, community-run platform that connects people and organizations around household pets: adopting, fostering, and pet sitting, with local communities built around shelters and rescues.
 
-> **Status:** Phase 1 (foundation) in progress. Accounts work on the web: sign-up and sign-in with passkeys, email links or codes, or passwords, optional two-step sign-in, and profile photos that pass through the photo safety pipeline. Database backups run with weekly restore drills. The mobile apps have an instance picker and keep their session in secure storage, but haven't been tried on devices yet. Still to come in Phase 1: groundwork for Google and Apple sign-in, a perceptual image-matching provider, and off-site backups. There are no pet listings or communities yet. See the [plan and roadmap](docs/PLAN.md).
+> **Status:** Phase 1 (foundation) in progress. Accounts work on the web: sign-up and sign-in with passkeys, email links or codes, or passwords, optional two-step sign-in, and profile photos that pass through the photo safety pipeline. Database backups run with weekly restore drills. The mobile apps have an instance picker and keep their session in secure storage, but haven't been tried on devices yet. Still to come in Phase 1: a perceptual image-matching provider, and off-site backups. There are no pet listings or communities yet. See the [plan and roadmap](docs/PLAN.md).
 
 ## Vision
 
