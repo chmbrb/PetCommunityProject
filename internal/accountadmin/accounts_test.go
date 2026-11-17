@@ -22,6 +22,7 @@ type fakeDB struct {
 	passkeys map[uuid.UUID][]store.ListAccountPasskeysRow
 	sessions map[uuid.UUID]int64 // active sessions per account
 	signups  bool
+	password bool
 	audits   []store.InsertAuditEventParams
 }
 
@@ -110,12 +111,21 @@ func (f *fakeDB) DeletePasskey(_ context.Context, arg store.DeletePasskeyParams)
 }
 
 func (f *fakeDB) FeatureFlagEnabled(_ context.Context, flag string) (bool, error) {
-	return flag == "open_registration" && f.signups, nil
+	switch flag {
+	case "open_registration":
+		return f.signups, nil
+	case "password_sign_in":
+		return f.password, nil
+	}
+	return false, nil
 }
 
 func (f *fakeDB) SetFeatureFlag(_ context.Context, arg store.SetFeatureFlagParams) error {
-	if arg.Flag == "open_registration" {
+	switch arg.Flag {
+	case "open_registration":
 		f.signups = arg.Enabled
+	case "password_sign_in":
+		f.password = arg.Enabled
 	}
 	return nil
 }
@@ -135,6 +145,7 @@ func setup() (*Service, *fakeDB, uuid.UUID) {
 		passkeys: map[uuid.UUID][]store.ListAccountPasskeysRow{id: {{ID: uuid.New(), Name: "Phone"}}},
 		sessions: map[uuid.UUID]int64{id: 3},
 		signups:  true,
+		password: true,
 	}
 	return &Service{db: db}, db, id
 }
@@ -298,5 +309,32 @@ func TestUnknownAccount(t *testing.T) {
 	}
 	if err := svc.Reinstate(ctx, uuid.New(), "x", "Sam"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Reinstate: %v", err)
+	}
+}
+
+func TestSetPasswordSignIn(t *testing.T) {
+	svc, db, _ := setup()
+	ctx := context.Background()
+	if err := svc.SetPasswordSignIn(ctx, false, "takeover wave", "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := svc.PasswordSignInOn(ctx); on {
+		t.Error("password sign-in still on")
+	}
+	if open, _ := svc.SignupsOpen(ctx); !open {
+		t.Error("pausing passwords closed sign-ups")
+	}
+	e, d := lastAudit(t, db)
+	if e.Action != "instance.password_sign_in_paused" || d["reason"] != "takeover wave" {
+		t.Errorf("audit = %s %v", e.Action, d)
+	}
+	if err := svc.SetPasswordSignIn(ctx, true, "wave over", "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := lastAudit(t, db); e.Action != "instance.password_sign_in_resumed" {
+		t.Errorf("audit = %s", e.Action)
+	}
+	if err := svc.SetPasswordSignIn(ctx, false, "", "Sam"); err == nil {
+		t.Error("paused without a reason")
 	}
 }

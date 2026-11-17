@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError, requestSignInLink } from '../api/client'
@@ -10,10 +10,14 @@ import SecondStepForm from '../components/SecondStepForm.vue'
 import { describePasskeyError } from '../passkeyErrors'
 import { isApp } from '../appInstance'
 import ConnectedInstance from '../components/ConnectedInstance.vue'
+import { useInstance } from '../useInstance'
 import { useSession } from '../useSession'
 
 const router = useRouter()
 const { signIn, signInWithEmail, signInWithPassword } = useSession()
+const { instance } = useInstance()
+// The operator can pause password sign-ins, e.g. during a wave of account takeovers.
+const passwordsPaused = computed(() => instance.value?.features.password_sign_in === false)
 
 // Passkeys don't work inside the apps yet (ADR 0023): email codes and passwords do.
 const supported = browserSupportsWebAuthn() && !isApp
@@ -197,11 +201,21 @@ function startOver() {
           required
         />
         <PasswordField
+          v-if="!passwordsPaused"
           v-model="password"
           autocomplete="current-password"
           label="Password (if you've set one)"
           :disabled="busy !== null"
         />
+        <v-alert
+          v-else
+          type="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          Signing in with a password is paused on this instance for now. We'll email you a
+          sign-in code instead.
+        </v-alert>
         <v-alert
           v-if="error"
           type="error"
@@ -211,6 +225,7 @@ function startOver() {
           {{ error }}
         </v-alert>
         <v-btn
+          v-if="!passwordsPaused"
           type="submit"
           :color="supported ? undefined : 'primary'"
           :variant="supported ? 'outlined' : 'elevated'"
@@ -231,7 +246,7 @@ function startOver() {
           :disabled="busy !== null"
           @click="sendCode"
         >
-          Email me a sign-in code instead
+          {{ passwordsPaused ? 'Email me a sign-in code' : 'Email me a sign-in code instead' }}
         </v-btn>
       </v-form>
     </template>

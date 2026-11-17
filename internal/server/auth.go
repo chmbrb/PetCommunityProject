@@ -384,6 +384,8 @@ func (s *Server) writeAuthError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusBadRequest, "link_invalid", err.Error())
 	case errors.Is(err, auth.ErrPasswordLocked):
 		writeError(w, http.StatusTooManyRequests, "password_locked", err.Error())
+	case errors.Is(err, auth.ErrPasswordSignInPaused):
+		writeError(w, http.StatusForbidden, "password_sign_in_paused", err.Error())
 	case errors.Is(err, auth.ErrNewDeviceCode):
 		writeError(w, http.StatusUnauthorized, "email_code_required", err.Error())
 	case errors.Is(err, auth.ErrLastSignInMethod):

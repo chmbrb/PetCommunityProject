@@ -53,6 +53,9 @@ func TestSignupsArguments(t *testing.T) {
 		if err := signups(context.Background(), config.Config{}, args, &bytes.Buffer{}, &bytes.Buffer{}); !errors.Is(err, errSignupsUsage) {
 			t.Errorf("signups %v: err = %v, want the usage error", args, err)
 		}
+		if err := passwordSignIn(context.Background(), config.Config{}, args, &bytes.Buffer{}, &bytes.Buffer{}); !errors.Is(err, errPasswordSignInUsage) {
+			t.Errorf("password-sign-in %v: err = %v, want the usage error", args, err)
+		}
 	}
 }
 
@@ -61,8 +64,9 @@ func TestRunAccountsUsage(t *testing.T) {
 		return map[string]string{"PC_DATABASE_URL": "postgres://localhost/none"}[k]
 	}
 	for cmd, want := range map[string]string{
-		"accounts": "petcommunity accounts <command>",
-		"signups":  "petcommunity signups [on|off",
+		"accounts":         "petcommunity accounts <command>",
+		"signups":          "petcommunity signups [on|off",
+		"password-sign-in": "petcommunity password-sign-in [on|off",
 	} {
 		var stderr bytes.Buffer
 		args := []string{cmd, "help"}

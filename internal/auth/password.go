@@ -48,6 +48,9 @@ const (
 
 var (
 	ErrPasswordLocked = errors.New("too many wrong passwords; try again in 15 minutes, or sign in with a code we email you")
+	// ErrPasswordSignInPaused means the operator has paused password sign-ins, such as
+	// during a wave of account takeovers (the password_sign_in flag).
+	ErrPasswordSignInPaused = errors.New("password sign-in is paused on this instance for now; sign in with a code we email you, or a passkey")
 	// ErrNewDeviceCode means the password was right, but the device isn't recognized,
 	// so an emailed code is needed to finish signing in.
 	ErrNewDeviceCode = errors.New("we've emailed you a code to confirm it's you on this new device")
@@ -191,6 +194,12 @@ func (s *Service) PasswordSignIn(ctx context.Context, email, password, code stri
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" || len(password) > 4*maxPasswordLength {
 		return Session{}, ErrSignInFailed
+	}
+	// Checked before looking at the account, so it says nothing about the password.
+	if on, err := s.db.FeatureFlagEnabled(ctx, "password_sign_in"); err != nil {
+		return Session{}, err
+	} else if !on {
+		return Session{}, ErrPasswordSignInPaused
 	}
 
 	var issued Session
