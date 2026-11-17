@@ -484,3 +484,56 @@ func TestMFAKey(t *testing.T) {
 		t.Errorf("short key: err = %v", err)
 	}
 }
+
+func TestPreviousKeys(t *testing.T) {
+	key := func(b byte) string { return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32)) }
+	base := map[string]string{"PC_DATABASE_URL": "postgres://x", "PC_SECRET_KEY": key(1), "PC_MFA_KEY": key(2)}
+
+	cfg, err := Load(env(base))
+	if err != nil || cfg.SecretKeyPrevious != nil || cfg.MFAKeyPrevious != nil {
+		t.Fatalf("no previous keys by default: %v, %v, %v", err, cfg.SecretKeyPrevious, cfg.MFAKeyPrevious)
+	}
+
+	base["PC_SECRET_KEY_PREVIOUS"] = key(3)
+	base["PC_MFA_KEY_PREVIOUS"] = key(4)
+	cfg, err = Load(env(base))
+	if err != nil || !bytes.Equal(cfg.SecretKeyPrevious, bytes.Repeat([]byte{3}, 32)) || !bytes.Equal(cfg.MFAKeyPrevious, bytes.Repeat([]byte{4}, 32)) {
+		t.Fatalf("previous keys: %v", err)
+	}
+
+	// An empty file means none, so the files can always be mounted.
+	empty := filepath.Join(t.TempDir(), "secret_key_previous")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	delete(base, "PC_SECRET_KEY_PREVIOUS")
+	base["PC_SECRET_KEY_PREVIOUS_FILE"] = empty
+	if cfg, err := Load(env(base)); err != nil || cfg.SecretKeyPrevious != nil {
+		t.Errorf("empty previous-key file: %v, %v", err, cfg.SecretKeyPrevious)
+	}
+	delete(base, "PC_SECRET_KEY_PREVIOUS_FILE")
+
+	for name, tc := range map[string]struct {
+		set  map[string]string
+		want string
+	}{
+		"same as current": {map[string]string{"PC_MFA_KEY_PREVIOUS": key(2)}, "PC_MFA_KEY_PREVIOUS is the same as PC_MFA_KEY"},
+		// In production; development falls back to its own key when none is set.
+		"without current":       {map[string]string{"PC_ENV": "production", "PC_SECRET_KEY": "", "PC_SECRET_KEY_PREVIOUS": key(3)}, "set without PC_SECRET_KEY"},
+		"dev key in production": {map[string]string{"PC_ENV": "production", "PC_MFA_KEY_PREVIOUS": base64.StdEncoding.EncodeToString(DevMFAKey)}, "PC_MFA_KEY_PREVIOUS is the public development key"},
+		"too short":             {map[string]string{"PC_SECRET_KEY_PREVIOUS": base64.StdEncoding.EncodeToString([]byte("short"))}, "32 bytes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := map[string]string{}
+			for k, v := range base {
+				m[k] = v
+			}
+			for k, v := range tc.set {
+				m[k] = v
+			}
+			if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

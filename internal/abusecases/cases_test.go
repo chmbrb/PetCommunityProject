@@ -103,7 +103,7 @@ var now = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 // setup returns a service with one open case whose evidence is sealed in the bucket.
 func setup(t *testing.T) (*Service, *fakeDB, *storage.MemoryBucket, store.GetAbuseImageryCaseRow, []byte) {
 	t.Helper()
-	sealer, err := media.NewEvidenceSealer(bytes.Repeat([]byte{7}, 32))
+	sealer, err := media.NewEvidenceSealer(bytes.Repeat([]byte{7}, 32), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

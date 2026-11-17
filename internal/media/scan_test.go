@@ -66,7 +66,7 @@ func TestNewScanner(t *testing.T) {
 }
 
 func TestEvidenceSealer(t *testing.T) {
-	s, err := NewEvidenceSealer(config.DevSecretKey)
+	s, err := NewEvidenceSealer(config.DevSecretKey, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestEvidenceSealer(t *testing.T) {
 	if _, err := s.Open(otherID, sealed); !errors.Is(err, ErrEvidenceCorrupt) {
 		t.Errorf("opened under another upload's ID: %v", err)
 	}
-	otherKey, _ := NewEvidenceSealer(bytes.Repeat([]byte{7}, 32))
+	otherKey, _ := NewEvidenceSealer(bytes.Repeat([]byte{7}, 32), nil)
 	if _, err := otherKey.Open(id, sealed); !errors.Is(err, ErrEvidenceCorrupt) {
 		t.Errorf("opened with another secret: %v", err)
 	}

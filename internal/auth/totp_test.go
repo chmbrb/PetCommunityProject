@@ -82,26 +82,43 @@ func TestRecoveryCodes(t *testing.T) {
 	}
 }
 
-func TestMFASealer(t *testing.T) {
+func TestMFAKeyring(t *testing.T) {
 	key := make([]byte, 32)
-	m, err := newMFASealer(key)
+	m, err := NewMFAKeyring(key, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, b := uuid.New(), uuid.New()
-	sealed, err := m.seal(a, []byte("totp secret bytes!!!"))
+	sealed, err := m.Seal(a, []byte("totp secret bytes!!!"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := m.open(a, m.keyID, sealed); err != nil || string(got) != "totp secret bytes!!!" {
+	if got, err := m.Open(a, m.KeyID(), sealed); err != nil || string(got) != "totp secret bytes!!!" {
 		t.Fatalf("open = %q, %v", got, err)
 	}
 	// Bound to the account: a secret copied to another account doesn't decrypt.
-	if _, err := m.open(b, m.keyID, sealed); err == nil {
+	if _, err := m.Open(b, m.KeyID(), sealed); err == nil {
 		t.Error("secret opened for a different account")
 	}
-	other, _ := newMFASealer(append(make([]byte, 31), 1))
-	if _, err := other.open(a, m.keyID, sealed); !errors.Is(err, ErrMFAKeyMismatch) {
+	other, _ := NewMFAKeyring(append(make([]byte, 31), 1), nil)
+	if _, err := other.Open(a, m.KeyID(), sealed); !errors.Is(err, ErrMFAKeyMismatch) {
 		t.Errorf("open with a different key: err = %v, want ErrMFAKeyMismatch", err)
+	}
+
+	// During a rotation, secrets under the previous key still open; new ones use the
+	// current key.
+	rotating, err := NewMFAKeyring(append(make([]byte, 31), 1), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotating.PreviousKeyID() != m.KeyID() {
+		t.Fatalf("previous key ID = %s, want %s", rotating.PreviousKeyID(), m.KeyID())
+	}
+	if got, err := rotating.Open(a, m.KeyID(), sealed); err != nil || string(got) != "totp secret bytes!!!" {
+		t.Fatalf("open under the previous key = %q, %v", got, err)
+	}
+	resealed, _ := rotating.Seal(a, []byte("totp secret bytes!!!"))
+	if _, err := m.Open(a, rotating.KeyID(), resealed); !errors.Is(err, ErrMFAKeyMismatch) {
+		t.Errorf("the old keyring opened a new seal: %v", err)
 	}
 }

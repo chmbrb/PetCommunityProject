@@ -113,53 +113,97 @@ func checkTOTP(secret []byte, code string, now time.Time, lastStep int64) (int64
 	return 0, false
 }
 
-// mfaSealer encrypts TOTP secrets with a key derived from the MFA key, binding each to
-// its account so a secret copied to another row doesn't decrypt.
-type mfaSealer struct {
-	aead  cipher.AEAD
-	keyID string
+// MFAKeyring encrypts TOTP secrets with a key derived from the MFA key, binding each to
+// its account so a secret copied to another row doesn't decrypt. It seals under the
+// current MFA key and opens under the current or, during a rotation, the previous one
+// (ADR 0025).
+type MFAKeyring struct {
+	current  mfaKey
+	previous *mfaKey
 }
 
-func newMFASealer(key []byte) (*mfaSealer, error) {
+type mfaKey struct {
+	aead cipher.AEAD
+	id   string
+}
+
+// NewMFAKeyring derives the keys from the 32-byte MFA key and, while a rotation is under
+// way, the previous one (nil otherwise).
+func NewMFAKeyring(key, previous []byte) (*MFAKeyring, error) {
+	current, err := deriveMFAKey(key)
+	if err != nil {
+		return nil, err
+	}
+	m := &MFAKeyring{current: current}
+	if previous != nil {
+		p, err := deriveMFAKey(previous)
+		if err != nil {
+			return nil, fmt.Errorf("previous MFA key: %w", err)
+		}
+		m.previous = &p
+	}
+	return m, nil
+}
+
+func deriveMFAKey(key []byte) (mfaKey, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("MFA key must be 32 bytes, got %d", len(key))
+		return mfaKey{}, fmt.Errorf("MFA key must be 32 bytes, got %d", len(key))
 	}
 	encKey, err := hkdf.Key(sha256.New, key, nil, "PetCommunityProject TOTP secrets v1", 32)
 	if err != nil {
-		return nil, err
+		return mfaKey{}, err
 	}
 	idBytes, err := hkdf.Key(sha256.New, key, nil, "PetCommunityProject TOTP secrets key ID v1", 8)
 	if err != nil {
-		return nil, err
+		return mfaKey{}, err
 	}
 	block, err := aes.NewCipher(encKey)
 	if err != nil {
-		return nil, err
+		return mfaKey{}, err
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return mfaKey{}, err
 	}
-	return &mfaSealer{aead: aead, keyID: hex.EncodeToString(idBytes)}, nil
+	return mfaKey{aead: aead, id: hex.EncodeToString(idBytes)}, nil
 }
 
-func (m *mfaSealer) seal(accountID uuid.UUID, secret []byte) ([]byte, error) {
-	nonce := make([]byte, m.aead.NonceSize())
+// KeyID identifies the current MFA key; it's stored with each sealed secret.
+func (m *MFAKeyring) KeyID() string { return m.current.id }
+
+// PreviousKeyID identifies the MFA key being retired, or is empty when there's none.
+func (m *MFAKeyring) PreviousKeyID() string {
+	if m.previous == nil {
+		return ""
+	}
+	return m.previous.id
+}
+
+// Seal encrypts an account's TOTP secret under the current key.
+func (m *MFAKeyring) Seal(accountID uuid.UUID, secret []byte) ([]byte, error) {
+	nonce := make([]byte, m.current.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return m.aead.Seal(nonce, nonce, secret, accountID[:]), nil
+	return m.current.aead.Seal(nonce, nonce, secret, accountID[:]), nil
 }
 
-func (m *mfaSealer) open(accountID uuid.UUID, keyID string, sealed []byte) ([]byte, error) {
-	if keyID != m.keyID {
+// Open decrypts an account's TOTP secret with whichever key keyID names.
+func (m *MFAKeyring) Open(accountID uuid.UUID, keyID string, sealed []byte) ([]byte, error) {
+	var k mfaKey
+	switch {
+	case keyID == m.current.id:
+		k = m.current
+	case m.previous != nil && keyID == m.previous.id:
+		k = *m.previous
+	default:
 		return nil, ErrMFAKeyMismatch
 	}
-	n := m.aead.NonceSize()
+	n := k.aead.NonceSize()
 	if len(sealed) < n {
 		return nil, errors.New("corrupt TOTP secret")
 	}
-	return m.aead.Open(nil, sealed[:n], sealed[n:], accountID[:])
+	return k.aead.Open(nil, sealed[:n], sealed[n:], accountID[:])
 }
 
 // recoveryAlphabet leaves out letters and digits that are easy to confuse (0/o, 1/l/i).
@@ -240,12 +284,12 @@ func (s *Service) BeginTOTPSetup(ctx context.Context, p Principal, issuer string
 	if _, err := rand.Read(secret); err != nil {
 		return TOTPSetup{}, err
 	}
-	sealed, err := s.mfa.seal(p.AccountID, secret)
+	sealed, err := s.mfa.Seal(p.AccountID, secret)
 	if err != nil {
 		return TOTPSetup{}, err
 	}
 	n, err := s.db.StartTOTPSetup(ctx, store.StartTOTPSetupParams{
-		AccountID: p.AccountID, SecretEncrypted: sealed, KeyID: s.mfa.keyID,
+		AccountID: p.AccountID, SecretEncrypted: sealed, KeyID: s.mfa.KeyID(),
 	})
 	if err != nil {
 		return TOTPSetup{}, err
@@ -283,7 +327,7 @@ func (s *Service) ConfirmTOTP(ctx context.Context, p Principal, code string) ([]
 		if f.ConfirmedAt != nil {
 			return ErrTOTPExists
 		}
-		secret, err := s.mfa.open(p.AccountID, f.KeyID, f.SecretEncrypted)
+		secret, err := s.mfa.Open(p.AccountID, f.KeyID, f.SecretEncrypted)
 		if err != nil {
 			return err
 		}
@@ -431,7 +475,7 @@ func (s *Service) FinishMFA(ctx context.Context, mfaToken, code, recoveryCode st
 			if err != nil {
 				return err
 			}
-			secret, err := s.mfa.open(ch.AccountID, f.KeyID, f.SecretEncrypted)
+			secret, err := s.mfa.Open(ch.AccountID, f.KeyID, f.SecretEncrypted)
 			if err != nil {
 				return err
 			}

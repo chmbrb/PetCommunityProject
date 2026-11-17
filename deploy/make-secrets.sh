@@ -36,11 +36,24 @@ provided() {
 	echo "  FILL IN    $dir/$1   ($2)"
 }
 
+# Keys being retired during a rotation (ADR 0025): empty, which means no rotation.
+rotation() {
+	if [ -e "$dir/$1" ]; then
+		echo "  kept       $dir/$1"
+		return
+	fi
+	: >"$dir/$1"
+	chmod 644 "$dir/$1"
+	echo "  empty      $dir/$1   (only filled in during a key rotation)"
+}
+
 echo "Secrets in $dir:"
 generate db_password
 generate secret_key
 generate mfa_key
 generate backup_key
+rotation secret_key_previous
+rotation mfa_key_previous
 provided smtp_password "your email provider's SMTP password; may stay empty if it needs none"
 provided s3_access_key "your storage provider's access key ID"
 provided s3_secret_key "your storage provider's secret key"

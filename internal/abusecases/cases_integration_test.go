@@ -54,7 +54,7 @@ func TestCaseLifecycleInPostgres(t *testing.T) {
 	exec(`INSERT INTO media_assets (id, owner_actor_id, purpose, status, upload_bytes) VALUES ($1, $2, 'avatar', 'quarantined', 33)`,
 		mediaID, actorID)
 
-	sealer, err := media.NewEvidenceSealer(bytes.Repeat([]byte{9}, 32))
+	sealer, err := media.NewEvidenceSealer(bytes.Repeat([]byte{9}, 32), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

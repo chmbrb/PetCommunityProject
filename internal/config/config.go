@@ -91,6 +91,12 @@ type Config struct {
 	// API, which checks codes, needs it; it's separate from SecretKey, which only the
 	// worker holds.
 	MFAKey []byte
+	// SecretKeyPrevious and MFAKeyPrevious (PC_SECRET_KEY_PREVIOUS, PC_MFA_KEY_PREVIOUS)
+	// are keys being retired: data sealed under them can still be opened, and
+	// `petcommunity keys reencrypt` moves it to the current key (ADR 0025). Nil when
+	// no rotation is under way.
+	SecretKeyPrevious []byte
+	MFAKeyPrevious    []byte
 }
 
 // Storage configures S3-compatible object storage: a hosted provider in production,
@@ -310,6 +316,21 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		cfg.MFAKey = key
 	}
+	// An empty file means no rotation is under way, so the files can always exist.
+	if v := readSecret("PC_SECRET_KEY_PREVIOUS"); v != "" {
+		key, err := decodeSecretKey("PC_SECRET_KEY_PREVIOUS", v)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		cfg.SecretKeyPrevious = key
+	}
+	if v := readSecret("PC_MFA_KEY_PREVIOUS"); v != "" {
+		key, err := decodeSecretKey("PC_MFA_KEY_PREVIOUS", v)
+		if err != nil {
+			parseErrs = append(parseErrs, err)
+		}
+		cfg.MFAKeyPrevious = key
+	}
 	if v := getenv("PC_SMTP_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
 		if err != nil || port < 1 || port > 65535 {
@@ -361,6 +382,8 @@ func (c Config) validate() error {
 	if c.Mail.From == "" {
 		errs = append(errs, errors.New("PC_MAIL_FROM is required"))
 	}
+	errs = append(errs, checkPrevious("PC_SECRET_KEY", c.SecretKey, c.SecretKeyPrevious, DevSecretKey, c.Env)...)
+	errs = append(errs, checkPrevious("PC_MFA_KEY", c.MFAKey, c.MFAKeyPrevious, DevMFAKey, c.Env)...)
 	if c.Mail.CAFile != "" && c.Mail.Security == MailNone {
 		errs = append(errs, errors.New("PC_SMTP_CA_FILE needs PC_SMTP_SECURITY=starttls or tls"))
 	}
@@ -523,6 +546,24 @@ func mailDefaults(env Environment) Mail {
 		Security: MailNone,
 		From:     "PetCommunityProject <noreply@localhost>",
 	}
+}
+
+// checkPrevious validates a key being retired (ADR 0025): it's only useful next to a
+// different current key, and in production it can't be a public development key.
+func checkPrevious(name string, current, previous, devKey []byte, env Environment) []error {
+	if len(previous) == 0 {
+		return nil
+	}
+	var errs []error
+	if len(current) == 0 {
+		errs = append(errs, fmt.Errorf("%s_PREVIOUS is set without %s; the previous key is only used next to a current one", name, name))
+	} else if bytes.Equal(previous, current) {
+		errs = append(errs, fmt.Errorf("%s_PREVIOUS is the same as %s; put the new key in %s and the old one in %s_PREVIOUS", name, name, name, name))
+	}
+	if env == Production && bytes.Equal(previous, devKey) {
+		errs = append(errs, fmt.Errorf("%s_PREVIOUS is the public development key", name))
+	}
+	return errs
 }
 
 // abuseAlertDefault is where match alerts go unless PC_ABUSE_ALERT_EMAIL says otherwise.
