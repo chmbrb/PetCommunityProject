@@ -169,4 +169,4 @@ Ratings: **L**ikelihood and **I**mpact, each H/M/L. **Phase** = when the mitigat
 - Choose a hash-matching provider or program, and check eligibility for a small nonprofit.
 - Decide the retention periods per data type (PLAN.md, Data Retention).
 - Ask the Phase 2 pilot shelter how they have been impersonated, so A2/A3 mitigations are based on real cases.
-- Write an incident response runbook (account compromise, data breach, CSAM, scam wave).
+- Write an incident response runbook (account compromise, data breach, CSAM, scam wave). Drafted in [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md), for legal review.

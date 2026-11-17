@@ -43,6 +43,7 @@ Go backend · PostgreSQL (with PostGIS) · Vue 3 + Vuetify web app, packaged for
 - [Domain model](docs/DOMAIN_MODEL.md): core entities and how they map to ActivityPub
 - [Threat model](docs/THREAT_MODEL.md): risks and mitigations by phase
 - [Compliance](docs/COMPLIANCE.md): federal, state, and local requirements by phase, as a checklist for legal review
+- [Incident response](docs/INCIDENT_RESPONSE.md): what operators do when something goes wrong: abuse imagery, account takeovers, breaches, scam waves
 - [Architecture decision records](docs/adr/README.md)
 - [Repository setup](docs/REPOSITORY_SETUP.md): how the GitHub repository and maintainer accounts are secured
 
