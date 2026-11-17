@@ -48,6 +48,8 @@ commands:
   migrate [up]     apply pending database migrations
   migrate status   list migrations and whether they are applied
   cases            abuse imagery cases: list, show, export, report, close
+  accounts         accounts: find, show, suspend, reinstate, remove-passkey
+  signups          whether new accounts can be created; on or off
   version          print the build version
   healthcheck      exit 0 if the local server answers /healthz
 `
@@ -96,6 +98,18 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		err = cases(ctx, cfg, args[1:], stdout, stderr)
 		if errors.Is(err, errCasesUsage) {
 			fmt.Fprint(stderr, casesUsage)
+			return 2
+		}
+	case "accounts":
+		err = accounts(ctx, cfg, args[1:], stdout, stderr)
+		if errors.Is(err, errAccountsUsage) {
+			fmt.Fprint(stderr, accountsUsage)
+			return 2
+		}
+	case "signups":
+		err = signups(ctx, cfg, args[1:], stdout, stderr)
+		if errors.Is(err, errSignupsUsage) {
+			fmt.Fprint(stderr, signupsUsage)
 			return 2
 		}
 	default:
