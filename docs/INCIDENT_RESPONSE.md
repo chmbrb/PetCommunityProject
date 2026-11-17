@@ -38,38 +38,27 @@ What you'll have to go on today: the audit log (every case action, suspension, a
 
 ## Operator commands
 
-There are no moderation tools in the app yet (they come in Phase 2), so some steps are done in the database. Connect from the server:
+There are no moderation tools in the app yet (they come in Phase 2). Until then, these commands run on the server, like `petcommunity cases`. Every change needs `--operator` (your name) and `--reason`, and goes in the audit log:
+
+```sh
+docker compose run --rm -T worker accounts find @handle          # or an email address; prints the account's ID
+docker compose run --rm -T worker accounts show ACCOUNT_ID       # status, sign-in methods, passkeys, signed-in devices
+docker compose run --rm -T worker accounts suspend --operator "Your Name" --reason "suspected takeover" ACCOUNT_ID
+docker compose run --rm -T worker accounts reinstate --operator "Your Name" --reason "owner confirmed" ACCOUNT_ID
+docker compose run --rm -T worker accounts remove-passkey --operator "Your Name" --reason "added by attacker" ACCOUNT_ID PASSKEY_ID
+docker compose run --rm -T worker signups off --operator "Your Name" --reason "scam wave"
+docker compose run --rm -T worker signups on --operator "Your Name" --reason "wave over"
+```
+
+- **`suspend`** stops the account signing in and signs it out everywhere at once.
+- **`reinstate`** lifts a suspension. It refuses while an abuse imagery case is open or reported for the account: close the case first.
+- **`remove-passkey`** sends no email (suspended accounts get none), so tell the owner yourself. It won't remove the only passkey of an account whose email isn't confirmed, since it couldn't sign in without it.
+- **`signups off`** stops new accounts at once; existing accounts keep working. `signups` on its own says whether sign-ups are open.
+
+For anything else, such as an account's audit history, connect to the database from the server:
 
 ```sh
 docker compose exec db psql -U petcommunity petcommunity
-```
-
-**Find an account** by handle or email:
-
-```sql
-SELECT acc.id, acc.email, acc.status, a.handle, acc.created_at, acc.last_active_at
-FROM accounts acc JOIN actors a ON a.account_id = acc.id
-WHERE a.handle = 'handle' OR acc.email = 'name@example.org';
-```
-
-**Suspend an account and sign it out everywhere,** recording it in the audit log with your name. A suspended account can't sign in:
-
-```sql
-BEGIN;
-UPDATE accounts SET status = 'suspended' WHERE id = 'ACCOUNT_ID';
-UPDATE sessions SET revoked_at = now() WHERE account_id = 'ACCOUNT_ID' AND revoked_at IS NULL;
-INSERT INTO audit_log (id, action, target_type, target_id, details)
-VALUES (uuidv7(), 'account.suspended', 'account', 'ACCOUNT_ID',
-        '{"operator": "Your Name", "reason": "suspected takeover"}');
-COMMIT;
-```
-
-To lift it, set `status = 'active'` the same way, with an `account.reinstated` audit event.
-
-**Stop new sign-ups** (existing accounts keep working). It takes effect immediately:
-
-```sql
-UPDATE instance_feature_flags SET enabled = false WHERE flag = 'open_registration';
 ```
 
 Abuse imagery cases have their own command, `petcommunity cases` ([DEVELOPMENT.md](DEVELOPMENT.md), "Abuse imagery cases"). Restoring the database is in DEVELOPMENT.md, "Restoring from a backup".
@@ -98,26 +87,22 @@ A person may also report an image that no scanner matched.
 6. If law enforcement contacts you about the case, see [Requests from law enforcement](#requests-from-law-enforcement).
 7. When nothing more is needed, `cases close`. The worker purges the evidence 30 days after closing, and never before the preservation date.
 
-**If it was a false match** (a hash list mistake, confirmed by the hash list's provider rather than by looking at the image): `cases close --reason "..."`, then lift the suspension.
+**If it was a false match** (a hash list mistake, confirmed by the hash list's provider rather than by looking at the image): `cases close --reason "..."`, then lift the suspension with `accounts reinstate`.
 
-**If a person reports an image that no scanner matched:** suspend the uploader's account (see above), but don't download, view, or forward the image, and don't delete it. There's no way yet to turn such an upload into a case with preserved evidence. Ask legal counsel, and NCMEC, how to report it with what you have, and record what you did in the incident log. Building that path is a follow-up below.
+**If a person reports an image that no scanner matched:** suspend the uploader's account (`accounts suspend`), but don't download, view, or forward the image, and don't delete it. There's no way yet to turn such an upload into a case with preserved evidence. Ask legal counsel, and NCMEC, how to report it with what you have, and record what you did in the incident log. Building that path is a follow-up below.
 
 ### Account takeover
 
 **How you'll know:** the account's owner tells you, often after an email they didn't expect: a code for signing in with their password on a new device, or a notice that a passkey, their password, or two-step sign-in changed. Or someone reports strange posts or messages from the account.
 
 1. **Check that it's really the owner asking,** through a channel the attacker can't control: not by replying to the account's email address if it may have changed, and not by trusting a message sent from the account. For a verified organization, use the contact details from its verification.
-2. **Suspend the account and sign it out everywhere** (see above). This stops the attacker at once.
-3. **See what changed,** using the audit log and the account's sign-in methods:
+2. **Suspend the account and sign it out everywhere** (`accounts suspend`). This stops the attacker at once.
+3. **See what changed:** `accounts show ACCOUNT_ID` lists the account's passkeys, with when each was added and last used, and how else it signs in. The audit log shows what was done to it (in `psql`):
    ```sql
    SELECT occurred_at, action, details FROM audit_log WHERE target_id = 'ACCOUNT_ID' ORDER BY occurred_at;
-   SELECT i.id, p.name, i.created_at, i.last_used_at
-   FROM auth_identities i JOIN passkey_credentials p ON p.identity_id = i.id
-   WHERE i.account_id = 'ACCOUNT_ID' ORDER BY i.created_at;
-   SELECT client, user_agent, created_at, last_seen_at, revoked_at FROM sessions WHERE account_id = 'ACCOUNT_ID' ORDER BY created_at DESC LIMIT 20;
    ```
    Note any passkey the owner doesn't recognize; it has to go before the account is reinstated.
-4. **Give the account back:** remove each passkey the owner doesn't recognize (`DELETE FROM auth_identities WHERE id = 'IDENTITY_ID' AND kind = 'passkey';`, which removes its details too, with an audit event as above), then reinstate it. The owner signs in by email code, sets a new password if they use one (which signs out every other device), and checks their passkeys and two-step sign-in in Settings. Encourage two-step sign-in.
+4. **Give the account back:** remove each passkey the owner doesn't recognize (`accounts remove-passkey`), then `accounts reinstate`. The owner signs in by email code, sets a new password if they use one (which signs out every other device), and checks their passkeys and two-step sign-in in Settings. Encourage two-step sign-in.
 5. **Undo what the attacker did** with the account. Today that's limited to its profile and photo; once listings and messages exist (Phase 2), check those, and warn anyone the attacker contacted.
 6. **If it's a verified organization** (Phase 2), treat it as High: check its listings and applications too, and post a notice if adopters may have been contacted.
 
@@ -142,8 +127,8 @@ Most takeovers start with a reused password. If several accounts are taken over 
 **How you'll know:** several reports of the same kind at once, such as accounts posing as a real shelter, or messages asking for deposits outside the platform (THREAT_MODEL.md A2, A3; most of this arrives with listings and messages in Phase 2).
 
 1. **Find the pattern:** the accounts involved, when they signed up, and anything they share (handles, display names, email domains, profile photos). The media pipeline flags a photo that's a near copy of someone else's, which catches stolen pet and shelter photos.
-2. **Suspend the accounts** (see above), with the same reason in each audit event, so the wave can be found again.
-3. **If new accounts keep arriving, stop sign-ups for a while** (see above), and turn them back on once it's over.
+2. **Suspend the accounts** (`accounts suspend`), with the same reason in each audit event, so the wave can be found again.
+3. **If new accounts keep arriving, stop sign-ups for a while** (`signups off`), and turn them back on (`signups on`) once it's over.
 4. **Tell the people affected:** anyone who was contacted, and, for an impersonated shelter, the shelter itself, so it can warn its own followers.
 5. If money was taken, point the people affected to their bank and to the FTC (reportfraud.ftc.gov), and keep the details in case law enforcement asks.
 
@@ -165,7 +150,7 @@ Known weak points, in rough order of importance. Each one is also tracked where 
 
 - **There's no backup person**, so a serious incident depends on one person being reachable. It stays that way while the project lead runs everything alone (see [Roles and contacts](#roles-and-contacts)).
 - **A reported image that no scanner matched can't be turned into a case** with preserved evidence.
-- **No moderation tools:** suspending, finding accounts, and stopping sign-ups mean SQL by hand.
+- **No moderation tools yet:** the `accounts` and `signups` commands cover suspending, reinstating, removing a passkey, and stopping sign-ups, but there's no way yet to review reports or act on content.
 - **`PC_SECRET_KEY` and `mfa_key` can't be rotated**, and rotating the other secrets isn't scripted.
 - **Little to investigate with:** no request logs, no upload IP addresses (ADR 0022), and container logs kept only as long as Docker keeps them.
 - **No way to stop password sign-ins** temporarily during a wave of takeovers.
