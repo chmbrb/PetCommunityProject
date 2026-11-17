@@ -15,6 +15,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/chmbrb/PetCommunityProject/internal/abusecases"
 	"github.com/chmbrb/PetCommunityProject/internal/auth"
 	"github.com/chmbrb/PetCommunityProject/internal/database"
 	"github.com/chmbrb/PetCommunityProject/internal/media"
@@ -30,7 +31,7 @@ func NewInserter(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client[pgx.Tx]
 }
 
 // NewWorker returns a client that runs every job type, for the worker process.
-func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, mediaSvc *media.Service, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, mediaSvc *media.Service, cases *abusecases.Service, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, auth.NewEmailWorker(emailer))
 	river.AddWorker(workers, &CleanupWorker{db: db, logger: logger})
@@ -38,6 +39,7 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 	river.AddWorker(workers, &BackfillActorKeysWorker{keys: keys, logger: logger})
 	river.AddWorker(workers, &MediaWorker{media: mediaSvc})
 	river.AddWorker(workers, &MediaCleanupWorker{media: mediaSvc, logger: logger})
+	river.AddWorker(workers, &AbuseCasePurgeWorker{cases: cases, logger: logger})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger:  logger,
@@ -57,6 +59,10 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 				&river.PeriodicJobOpts{RunOnStart: true}),
 			river.NewPeriodicJob(river.PeriodicInterval(15*time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) { return MediaCleanupJob{}, nil },
+				&river.PeriodicJobOpts{RunOnStart: true}),
+			// Closed cases wait at least 30 days, so a daily run is plenty.
+			river.NewPeriodicJob(river.PeriodicInterval(24*time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) { return AbuseCasePurgeJob{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),
 		},
 	})

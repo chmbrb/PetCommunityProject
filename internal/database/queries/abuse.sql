@@ -31,7 +31,7 @@ ORDER BY c.created_at;
 -- Everything a report asks about the case, the uploader, and the upload.
 SELECT c.id, c.media_id, c.owner_actor_id, c.account_id, c.scanner, c.match_reference,
        c.sha256, c.evidence_key, c.status, c.report_reference, c.reported_at, c.preserve_until,
-       c.created_at,
+       c.created_at, c.closed_at,
        a.handle, a.display_name,
        acc.email AS account_email, acc.status AS account_status, acc.created_at AS account_created_at,
        m.created_at AS uploaded_at, m.purpose AS upload_purpose, m.upload_bytes
@@ -49,5 +49,21 @@ WHERE id = $1 AND status = 'open';
 
 -- name: CloseAbuseImageryCase :execrows
 -- Closing keeps a reported case's preserve_until; evidence is only purged after it.
-UPDATE abuse_imagery_cases SET status = 'closed'
+UPDATE abuse_imagery_cases SET status = 'closed', closed_at = now()
 WHERE id = $1 AND status IN ('open', 'reported');
+
+-- name: ListPurgeableAbuseImageryCases :many
+-- Closed cases whose evidence may be deleted: closed before closed_before, and past
+-- their preservation date if they were reported.
+SELECT id, media_id, evidence_key, report_reference
+FROM abuse_imagery_cases
+WHERE status = 'closed' AND closed_at < sqlc.arg(closed_before)
+  AND (preserve_until IS NULL OR preserve_until < now())
+ORDER BY closed_at
+LIMIT 100;
+
+-- name: DeletePurgeableAbuseImageryCase :execrows
+-- Checks the same conditions again, so only a purgeable case is ever deleted.
+DELETE FROM abuse_imagery_cases
+WHERE id = sqlc.arg(id) AND status = 'closed' AND closed_at < sqlc.arg(closed_before)
+  AND (preserve_until IS NULL OR preserve_until < now());

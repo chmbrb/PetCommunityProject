@@ -24,6 +24,7 @@ type AbuseImageryCase struct {
 	ReportedAt      *time.Time
 	PreserveUntil   *time.Time
 	CreatedAt       time.Time
+	ClosedAt        *time.Time
 }
 
 type Account struct {

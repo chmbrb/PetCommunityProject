@@ -62,7 +62,34 @@ func (f *fakeDB) CloseAbuseImageryCase(_ context.Context, id uuid.UUID) (int64, 
 		return 0, nil
 	}
 	c.Status = "closed"
+	closed := now
+	c.ClosedAt = &closed
 	f.cases[id] = c
+	return 1, nil
+}
+
+// purgeable mirrors the SQL: the database's now() is closedBefore + ClosedGrace.
+func (f *fakeDB) purgeable(c store.GetAbuseImageryCaseRow, closedBefore time.Time) bool {
+	current := closedBefore.Add(ClosedGrace)
+	return c.Status == "closed" && c.ClosedAt.Before(closedBefore) && (c.PreserveUntil == nil || c.PreserveUntil.Before(current))
+}
+
+func (f *fakeDB) ListPurgeableAbuseImageryCases(_ context.Context, closedBefore *time.Time) ([]store.ListPurgeableAbuseImageryCasesRow, error) {
+	var out []store.ListPurgeableAbuseImageryCasesRow
+	for _, c := range f.cases {
+		if f.purgeable(c, *closedBefore) {
+			out = append(out, store.ListPurgeableAbuseImageryCasesRow{ID: c.ID, MediaID: c.MediaID, EvidenceKey: c.EvidenceKey, ReportReference: c.ReportReference})
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeDB) DeletePurgeableAbuseImageryCase(_ context.Context, arg store.DeletePurgeableAbuseImageryCaseParams) (int64, error) {
+	c, ok := f.cases[arg.ID]
+	if !ok || !f.purgeable(c, *arg.ClosedBefore) {
+		return 0, nil
+	}
+	delete(f.cases, arg.ID)
 	return 1, nil
 }
 
@@ -270,5 +297,95 @@ func TestListFiltersByStatus(t *testing.T) {
 	}
 	if _, err := svc.List(ctx, "pending"); err == nil {
 		t.Error("unknown status accepted")
+	}
+}
+
+func TestPurgeWaitsForTheGracePeriod(t *testing.T) {
+	svc, db, bucket, c, _ := setup(t)
+	ctx := context.Background()
+	if err := svc.Close(ctx, c.ID, "hash list false positive", "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	svc.now = func() time.Time { return now.Add(ClosedGrace - time.Hour) }
+	if n, err := svc.Purge(ctx); err != nil || n != 0 {
+		t.Fatalf("purged %d, %v before the grace period ended", n, err)
+	}
+	if _, ok := bucket.Objects()[c.EvidenceKey]; !ok {
+		t.Fatal("evidence deleted before the grace period ended")
+	}
+
+	svc.now = func() time.Time { return now.Add(ClosedGrace + time.Hour) }
+	if n, err := svc.Purge(ctx); err != nil || n != 1 {
+		t.Fatalf("purged %d, %v; want 1", n, err)
+	}
+	if _, ok := bucket.Objects()[c.EvidenceKey]; ok {
+		t.Error("evidence not deleted")
+	}
+	if _, ok := db.cases[c.ID]; ok {
+		t.Error("case not deleted")
+	}
+	last := db.audits[len(db.audits)-1]
+	if last.Action != "abuse_imagery.purged" || last.TargetID != c.ID {
+		t.Errorf("last audit = %+v", last)
+	}
+	if n, err := svc.Purge(ctx); err != nil || n != 0 {
+		t.Errorf("second purge: %d, %v", n, err)
+	}
+}
+
+func TestPurgeKeepsReportedEvidenceUntilItsPreservationDate(t *testing.T) {
+	svc, db, bucket, c, _ := setup(t)
+	ctx := context.Background()
+	if _, err := svc.Report(ctx, c.ID, "98765", time.Time{}, time.Time{}, "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Close(ctx, c.ID, "report acknowledged", "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	// Well past the grace period, but before the year is up.
+	svc.now = func() time.Time { return now.AddDate(0, 6, 0) }
+	if n, err := svc.Purge(ctx); err != nil || n != 0 {
+		t.Fatalf("purged %d, %v before the preservation date", n, err)
+	}
+	svc.now = func() time.Time { return now.AddDate(1, 0, 1) }
+	if n, err := svc.Purge(ctx); err != nil || n != 1 {
+		t.Fatalf("purged %d, %v after the preservation date; want 1", n, err)
+	}
+	if _, ok := bucket.Objects()[c.EvidenceKey]; ok || db.cases[c.ID].ID != uuid.Nil {
+		t.Error("evidence or case left behind")
+	}
+}
+
+func TestPurgeNeverTouchesOpenOrReportedCases(t *testing.T) {
+	svc, db, bucket, c, _ := setup(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return now.AddDate(5, 0, 0) }
+	if n, err := svc.Purge(ctx); err != nil || n != 0 {
+		t.Fatalf("purged an open case: %d, %v", n, err)
+	}
+	svc.now = func() time.Time { return now }
+	if _, err := svc.Report(ctx, c.ID, "98765", time.Time{}, time.Time{}, "Sam"); err != nil {
+		t.Fatal(err)
+	}
+	svc.now = func() time.Time { return now.AddDate(5, 0, 0) }
+	if n, err := svc.Purge(ctx); err != nil || n != 0 {
+		t.Fatalf("purged a reported case that isn't closed: %d, %v", n, err)
+	}
+	if _, ok := bucket.Objects()[c.EvidenceKey]; !ok || db.cases[c.ID].Status != "reported" {
+		t.Error("an unclosed case lost its evidence")
+	}
+}
+
+func TestPurgeAfter(t *testing.T) {
+	closed := now
+	if !PurgeAfter(nil, nil).IsZero() {
+		t.Error("a case that isn't closed has no purge date")
+	}
+	if got := PurgeAfter(&closed, nil); !got.Equal(now.Add(ClosedGrace)) {
+		t.Errorf("unreported: %v", got)
+	}
+	keep := now.AddDate(1, 0, 0)
+	if got := PurgeAfter(&closed, &keep); !got.Equal(keep) {
+		t.Errorf("reported: %v", got)
 	}
 }

@@ -50,7 +50,7 @@ A retried job finds the case already open and does nothing more.
   - **Notifying the operator:** today a match is only an error-level log line.
   - **Upload IP addresses:** a CyberTipline report asks for the uploader's IP address and upload time. Uploads don't record an IP address yet, and server logs are kept only briefly (PLAN.md Data Retention). Decide whether to record it per upload.
   - **The incident response runbook** in THREAT_MODEL.md's follow-ups, including who files the report and how quickly.
-  - **Purging after preservation:** a job that deletes evidence and cases once `preserve_until` has passed and the case is closed.
+  - **Purging after preservation** (done): a daily worker job deletes the evidence and the case for closed cases past `preserve_until`, and no sooner than 30 days after closing, so a case closed by mistake can still be exported. Each purge is written to the audit log; the quarantined upload's record stays.
 
 ## Alternatives considered
 

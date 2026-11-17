@@ -13,7 +13,7 @@ import (
 )
 
 const closeAbuseImageryCase = `-- name: CloseAbuseImageryCase :execrows
-UPDATE abuse_imagery_cases SET status = 'closed'
+UPDATE abuse_imagery_cases SET status = 'closed', closed_at = now()
 WHERE id = $1 AND status IN ('open', 'reported')
 `
 
@@ -61,10 +61,30 @@ func (q *Queries) CreateAbuseImageryCase(ctx context.Context, arg CreateAbuseIma
 	return result.RowsAffected(), nil
 }
 
+const deletePurgeableAbuseImageryCase = `-- name: DeletePurgeableAbuseImageryCase :execrows
+DELETE FROM abuse_imagery_cases
+WHERE id = $1 AND status = 'closed' AND closed_at < $2
+  AND (preserve_until IS NULL OR preserve_until < now())
+`
+
+type DeletePurgeableAbuseImageryCaseParams struct {
+	ID           uuid.UUID
+	ClosedBefore *time.Time
+}
+
+// Checks the same conditions again, so only a purgeable case is ever deleted.
+func (q *Queries) DeletePurgeableAbuseImageryCase(ctx context.Context, arg DeletePurgeableAbuseImageryCaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePurgeableAbuseImageryCase, arg.ID, arg.ClosedBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAbuseImageryCase = `-- name: GetAbuseImageryCase :one
 SELECT c.id, c.media_id, c.owner_actor_id, c.account_id, c.scanner, c.match_reference,
        c.sha256, c.evidence_key, c.status, c.report_reference, c.reported_at, c.preserve_until,
-       c.created_at,
+       c.created_at, c.closed_at,
        a.handle, a.display_name,
        acc.email AS account_email, acc.status AS account_status, acc.created_at AS account_created_at,
        m.created_at AS uploaded_at, m.purpose AS upload_purpose, m.upload_bytes
@@ -89,6 +109,7 @@ type GetAbuseImageryCaseRow struct {
 	ReportedAt       *time.Time
 	PreserveUntil    *time.Time
 	CreatedAt        time.Time
+	ClosedAt         *time.Time
 	Handle           string
 	DisplayName      string
 	AccountEmail     *string
@@ -117,6 +138,7 @@ func (q *Queries) GetAbuseImageryCase(ctx context.Context, id uuid.UUID) (GetAbu
 		&i.ReportedAt,
 		&i.PreserveUntil,
 		&i.CreatedAt,
+		&i.ClosedAt,
 		&i.Handle,
 		&i.DisplayName,
 		&i.AccountEmail,
@@ -202,6 +224,49 @@ func (q *Queries) ListAbuseImageryCases(ctx context.Context, status *string) ([]
 			&i.ReportedAt,
 			&i.PreserveUntil,
 			&i.Handle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPurgeableAbuseImageryCases = `-- name: ListPurgeableAbuseImageryCases :many
+SELECT id, media_id, evidence_key, report_reference
+FROM abuse_imagery_cases
+WHERE status = 'closed' AND closed_at < $1
+  AND (preserve_until IS NULL OR preserve_until < now())
+ORDER BY closed_at
+LIMIT 100
+`
+
+type ListPurgeableAbuseImageryCasesRow struct {
+	ID              uuid.UUID
+	MediaID         uuid.UUID
+	EvidenceKey     string
+	ReportReference *string
+}
+
+// Closed cases whose evidence may be deleted: closed before closed_before, and past
+// their preservation date if they were reported.
+func (q *Queries) ListPurgeableAbuseImageryCases(ctx context.Context, closedBefore *time.Time) ([]ListPurgeableAbuseImageryCasesRow, error) {
+	rows, err := q.db.Query(ctx, listPurgeableAbuseImageryCases, closedBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPurgeableAbuseImageryCasesRow
+	for rows.Next() {
+		var i ListPurgeableAbuseImageryCasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MediaID,
+			&i.EvidenceKey,
+			&i.ReportReference,
 		); err != nil {
 			return nil, err
 		}

@@ -181,7 +181,8 @@ docker compose run --rm -T worker cases close --operator "Your Name" --reason ".
 
 - **The exported file is the material itself.** Don't open or view it. Write it straight to an encrypted disk, attach it to the report, then delete it (`shred -u evidence.bin` on a disk that isn't copy-on-write). The case keeps its own encrypted copy. `export` refuses to write to a terminal, and checks the file against the SHA-256 recorded when it was uploaded.
 - **`report`** marks the case reported and keeps its evidence for a year after the report (`--reported-at` if it was filed earlier), or until `--preserve-until` if that's later. The database refuses anything shorter.
-- **`close`** is for a case that won't be reported, such as a false match from a hash list, or for a reported case once nothing more is needed. Closing doesn't delete anything, and it doesn't lift the uploader's suspension.
+- **`close`** is for a case that won't be reported, such as a false match from a hash list, or for a reported case once nothing more is needed. It doesn't lift the uploader's suspension.
+- **Purging:** once a day, the worker deletes the evidence and the case for cases closed more than 30 days ago that are past their preservation date. `show` prints when that will be. Until then, a closed case can still be exported. The audit log keeps a record of the case and its purge. Open and reported cases are never purged, so close a reported case once its report needs nothing more.
 - A report also asks for the uploader's IP address, which uploads don't record yet (ADR 0022, follow-up work).
 
 ### Backups

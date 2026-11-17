@@ -39,8 +39,8 @@ commands:
       record that the case was reported (REF: e.g. the CyberTipline report ID);
       evidence is kept for at least a year after the report
   close --operator NAME --reason TEXT ID
-      close a case, e.g. a false match; a reported case keeps its evidence
-      until its preservation date
+      close a case, e.g. a false match. The worker purges a closed case's
+      evidence 30 days after closing, and never before its preservation date
 
 TIME is RFC 3339, e.g. 2026-11-16T09:30:00Z. The operator's name goes in the
 audit log with every export, report, and close.
@@ -165,6 +165,8 @@ func cases(ctx context.Context, cfg config.Config, args []string, stdout io.Writ
 			{"Report reference", deref(c.ReportReference)},
 			{"Reported", formatTime(c.ReportedAt)},
 			{"Preserve until", formatTime(c.PreserveUntil)},
+			{"Closed", formatTime(c.ClosedAt)},
+			{"Purged after", purgeAfter(c.ClosedAt, c.PreserveUntil)},
 			{"Upload", c.MediaID.String()},
 			{"Uploaded", c.UploadedAt.UTC().Format(time.RFC3339)},
 			{"Upload purpose", c.UploadPurpose},
@@ -221,6 +223,15 @@ func parseTime(name, v string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("--%s: use RFC 3339, e.g. 2026-11-16T09:30:00Z", name)
 	}
 	return t, nil
+}
+
+// purgeAfter says when the purge job deletes a closed case's evidence.
+func purgeAfter(closedAt, preserveUntil *time.Time) string {
+	after := abusecases.PurgeAfter(closedAt, preserveUntil)
+	if after.IsZero() {
+		return "- (only closed cases are purged)"
+	}
+	return after.UTC().Format(time.RFC3339)
 }
 
 func formatTime(t *time.Time) string {
