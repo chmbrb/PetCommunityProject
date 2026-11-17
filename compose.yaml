@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Production deployment (ADR 0009). PREVIEW: backups (ADR 0016) and media storage
-# (ADR 0010) are not wired in yet, so don't run a real instance on this until they are.
+# Production deployment (ADR 0009). PREVIEW: backups only reach the server's own disk
+# until the off-site copy is set up, and there are no moderation tools yet, so don't
+# run an instance with public users on this (docs/DEVELOPMENT.md).
 #
 #   cp .env.example .env   # then fill in the values
 #   make secrets           # then fill in the provider secrets it lists
@@ -41,8 +42,18 @@ x-app-env: &app-env
   PC_MEDIA_URL: ${PC_MEDIA_URL:?set PC_MEDIA_URL in .env}
   PC_BREACHED_PASSWORD_CHECK: ${PC_BREACHED_PASSWORD_CHECK:-true}
 
+# Container logs, capped so they can't fill the disk. Docker keeps up to 5 files of
+# 50 MB per container; Podman ignores max-file and keeps the latest 50 MB. Save them
+# before restarting anything during an incident (docs/INCIDENT_RESPONSE.md).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   caddy:
+    logging: *logging
     build:
       context: .
       target: web
@@ -63,6 +74,7 @@ services:
     restart: unless-stopped
 
   app:
+    logging: *logging
     build:
       context: .
       target: app
@@ -88,6 +100,7 @@ services:
 
   # Runs background jobs: sends email and cleans up expired tokens (ADR 0006).
   worker:
+    logging: *logging
     image: petcommunity-app:local
     command: ["worker"]
     environment:
@@ -117,6 +130,7 @@ services:
 
   # Applies database migrations before the app starts.
   migrate:
+    logging: *logging
     image: petcommunity-app:local
     command: ["migrate"]
     environment: *app-env
@@ -129,6 +143,7 @@ services:
     restart: "no"
 
   db:
+    logging: *logging
     # PostGIS with current security fixes; the backup image is built on it (Dockerfile).
     build:
       context: .
@@ -171,6 +186,7 @@ services:
 
   # Prepares the backup folders on the backup disk with the right owner.
   backup-init:
+    logging: *logging
     build:
       context: .
       target: backup
@@ -188,6 +204,7 @@ services:
   # shared Unix socket and reads the data files read-only. It alone holds the backup
   # key and writes to the backup store.
   backup:
+    logging: *logging
     image: petcommunity-backup:local
     environment: &backup-env
       PC_BACKUP_KEY_FILE: /run/secrets/backup_key
@@ -214,6 +231,7 @@ services:
   # Restores the database from backups. Not part of the running stack; see
   # docs/DEVELOPMENT.md ("Restoring from a backup").
   backup-restore:
+    logging: *logging
     image: petcommunity-backup:local
     profiles: [restore]
     command: ["restore"]
