@@ -92,7 +92,7 @@ func newAuthTestEnv(t *testing.T, opts ...envOption) *authTestEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence, err := media.NewEvidenceSealer(config.DevSecretKey)
+	evidence, err := media.NewEvidenceSealer(config.DevSecretKey, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

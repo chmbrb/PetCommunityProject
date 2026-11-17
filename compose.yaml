@@ -85,7 +85,9 @@ services:
       <<: *app-env
       # Encrypts TOTP secrets (ADR 0014). Only the API, which checks codes, gets it.
       PC_MFA_KEY_FILE: /run/secrets/mfa_key
-    secrets: [db_password, s3_access_key, s3_secret_key, mfa_key]
+      # The MFA key being retired during a rotation; an empty file means none (ADR 0025).
+      PC_MFA_KEY_PREVIOUS_FILE: /run/secrets/mfa_key_previous
+    secrets: [db_password, s3_access_key, s3_secret_key, mfa_key, mfa_key_previous]
     healthcheck:
       test: ["CMD", "/usr/local/bin/petcommunity", "healthcheck"]
       interval: 10s
@@ -107,6 +109,8 @@ services:
       <<: *app-env
       # Encrypts actors' private keys (ADR 0012). Only the worker gets it.
       PC_SECRET_KEY_FILE: /run/secrets/secret_key
+      # The secret key being retired during a rotation; an empty file means none (ADR 0025).
+      PC_SECRET_KEY_PREVIOUS_FILE: /run/secrets/secret_key_previous
       # Only the worker sends email.
       PC_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
       # Checks uploads for known abuse imagery (ADR 0022); see .env.example.
@@ -114,7 +118,7 @@ services:
       PC_ABUSE_HASH_LIST_FILE: ${PC_ABUSE_HASH_LIST_FILE:-}
       # Where match alerts go; empty means abuse@ PC_INSTANCE_DOMAIN.
       PC_ABUSE_ALERT_EMAIL: ${PC_ABUSE_ALERT_EMAIL:-}
-    secrets: [db_password, s3_access_key, s3_secret_key, secret_key, smtp_password]
+    secrets: [db_password, s3_access_key, s3_secret_key, secret_key, secret_key_previous, smtp_password]
     volumes:
       # Hash lists for PC_ABUSE_SCANNER=hashlist, at /run/hash-lists/<file>.
       - ${PC_ABUSE_HASH_LIST_DIR:-./hash-lists}:/run/hash-lists:ro,z
@@ -260,6 +264,11 @@ secrets:
     file: ${PC_SECRETS_DIR:-./secrets}/secret_key
   mfa_key:
     file: ${PC_SECRETS_DIR:-./secrets}/mfa_key
+  # Empty except during a key rotation (ADR 0025); `make secrets` creates them.
+  secret_key_previous:
+    file: ${PC_SECRETS_DIR:-./secrets}/secret_key_previous
+  mfa_key_previous:
+    file: ${PC_SECRETS_DIR:-./secrets}/mfa_key_previous
   backup_key:
     file: ${PC_SECRETS_DIR:-./secrets}/backup_key
   smtp_password:

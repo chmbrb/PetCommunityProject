@@ -51,6 +51,7 @@ commands:
   accounts         accounts: find, show, suspend, reinstate, remove-passkey
   signups          whether new accounts can be created; on or off
   password-sign-in whether people can sign in with a password; on or off
+  keys             rotating encryption keys: status, reencrypt
   version          print the build version
   healthcheck      exit 0 if the local server answers /healthz
 `
@@ -111,6 +112,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		err = signups(ctx, cfg, args[1:], stdout, stderr)
 		if errors.Is(err, errSignupsUsage) {
 			fmt.Fprint(stderr, signupsUsage)
+			return 2
+		}
+	case "keys":
+		err = keys(ctx, cfg, args[1:], stdout)
+		if errors.Is(err, errKeysUsage) {
+			fmt.Fprint(stderr, keysUsage)
 			return 2
 		}
 	case "password-sign-in":
@@ -203,7 +210,7 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := cfg.RequireSecretKey(); err != nil {
 		return err
 	}
-	sealer, err := actorkeys.NewSealer(cfg.SecretKey)
+	sealer, err := actorkeys.NewSealer(cfg.SecretKey, cfg.SecretKeyPrevious)
 	if err != nil {
 		return err
 	}
@@ -215,7 +222,7 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	evidence, err := media.NewEvidenceSealer(cfg.SecretKey)
+	evidence, err := media.NewEvidenceSealer(cfg.SecretKey, cfg.SecretKeyPrevious)
 	if err != nil {
 		return err
 	}

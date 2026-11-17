@@ -110,7 +110,7 @@ type Service struct {
 	// hashing holds one slot per password hash in progress.
 	hashing chan struct{}
 	// mfa encrypts TOTP secrets; nil when no MFA key is configured.
-	mfa *mfaSealer
+	mfa *MFAKeyring
 }
 
 // New configures passkeys for this instance. Emails are queued on queue and sent by
@@ -141,7 +141,7 @@ func New(cfg config.Config, db *database.Store, queue JobQueue, logger *slog.Log
 		svc.breaches = NewPwnedPasswords()
 	}
 	if len(cfg.MFAKey) > 0 {
-		if svc.mfa, err = newMFASealer(cfg.MFAKey); err != nil {
+		if svc.mfa, err = NewMFAKeyring(cfg.MFAKey, cfg.MFAKeyPrevious); err != nil {
 			return nil, err
 		}
 	}

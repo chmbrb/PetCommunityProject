@@ -282,7 +282,7 @@ func TestAbuseImageryMatchIsPreservedAndSuspendsTheAccount(t *testing.T) {
 	if bytes.Contains(obj.Data, known[len(known)-100:]) {
 		t.Error("evidence is stored unencrypted")
 	}
-	sealer, _ := media.NewEvidenceSealer(config.DevSecretKey)
+	sealer, _ := media.NewEvidenceSealer(config.DevSecretKey, nil)
 	if original, err := sealer.Open(mustUUID(t, id), obj.Data); err != nil || !bytes.Equal(original, known) {
 		t.Errorf("evidence doesn't decrypt to the original: %v", err)
 	}

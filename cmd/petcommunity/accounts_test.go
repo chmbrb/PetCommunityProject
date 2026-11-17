@@ -78,3 +78,25 @@ func TestRunAccountsUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestKeysArguments(t *testing.T) {
+	for _, args := range [][]string{nil, {"rotate"}, {"status", "now"}} {
+		if err := keys(context.Background(), config.Config{}, args, &bytes.Buffer{}); !errors.Is(err, errKeysUsage) {
+			t.Errorf("keys %v: err = %v, want the usage error", args, err)
+		}
+	}
+}
+
+func TestRotationKeysFollowTheProcess(t *testing.T) {
+	key := bytes.Repeat([]byte{1}, 32)
+	// The worker: PC_SECRET_KEY only.
+	ks, err := rotationKeys(config.Config{SecretKey: key})
+	if err != nil || ks.ActorKeys == nil || ks.Evidence == nil || ks.MFA != nil {
+		t.Errorf("worker keys = %+v, %v", ks, err)
+	}
+	// The API: the MFA key only.
+	ks, err = rotationKeys(config.Config{MFAKey: key, MFAKeyPrevious: bytes.Repeat([]byte{2}, 32)})
+	if err != nil || ks.MFA == nil || ks.MFA.PreviousKeyID() == "" || ks.ActorKeys != nil {
+		t.Errorf("API keys = %+v, %v", ks, err)
+	}
+}

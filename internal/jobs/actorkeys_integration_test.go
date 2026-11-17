@@ -36,7 +36,7 @@ func newKeyMaker(t *testing.T) (*KeyMaker, *database.Store, *actorkeys.Sealer, f
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	sealer, err := actorkeys.NewSealer(bytes.Repeat([]byte{42}, 32))
+	sealer, err := actorkeys.NewSealer(bytes.Repeat([]byte{42}, 32), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -120,7 +120,7 @@ func cases(ctx context.Context, cfg config.Config, args []string, stdout io.Writ
 		if cfg.Storage.EvidenceBucket == "" {
 			return errors.New("PC_S3_EVIDENCE_BUCKET isn't set")
 		}
-		sealer, err := media.NewEvidenceSealer(cfg.SecretKey)
+		sealer, err := media.NewEvidenceSealer(cfg.SecretKey, cfg.SecretKeyPrevious)
 		if err != nil {
 			return err
 		}

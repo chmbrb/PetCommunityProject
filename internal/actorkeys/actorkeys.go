@@ -77,39 +77,70 @@ func ParsePublicKeyPEM(s string) (*rsa.PublicKey, error) {
 	return rsaKey, nil
 }
 
-// Sealer encrypts and decrypts private keys.
+// Sealer encrypts and decrypts private keys. It seals under the current secret and
+// opens under the current or, during a rotation, the previous one (ADR 0025).
 type Sealer struct {
-	aead  cipher.AEAD
-	keyID string
+	current  sealKey
+	previous *sealKey
 }
 
-// NewSealer derives the encryption key from the 32-byte instance secret.
-func NewSealer(secret []byte) (*Sealer, error) {
+type sealKey struct {
+	aead cipher.AEAD
+	id   string
+}
+
+// NewSealer derives the encryption keys from the 32-byte instance secret and, while a
+// rotation is under way, the previous one (nil otherwise).
+func NewSealer(secret, previous []byte) (*Sealer, error) {
+	current, err := deriveKey(secret)
+	if err != nil {
+		return nil, err
+	}
+	s := &Sealer{current: current}
+	if previous != nil {
+		p, err := deriveKey(previous)
+		if err != nil {
+			return nil, fmt.Errorf("previous secret key: %w", err)
+		}
+		s.previous = &p
+	}
+	return s, nil
+}
+
+func deriveKey(secret []byte) (sealKey, error) {
 	if len(secret) != 32 {
-		return nil, fmt.Errorf("secret key must be 32 bytes, got %d", len(secret))
+		return sealKey{}, fmt.Errorf("secret key must be 32 bytes, got %d", len(secret))
 	}
 	encKey, err := hkdf.Key(sha256.New, secret, nil, "PetCommunityProject actor private keys v1", 32)
 	if err != nil {
-		return nil, err
+		return sealKey{}, err
 	}
 	idBytes, err := hkdf.Key(sha256.New, secret, nil, "PetCommunityProject actor private keys key ID v1", 8)
 	if err != nil {
-		return nil, err
+		return sealKey{}, err
 	}
 	block, err := aes.NewCipher(encKey)
 	if err != nil {
-		return nil, err
+		return sealKey{}, err
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return sealKey{}, err
 	}
-	return &Sealer{aead: aead, keyID: hex.EncodeToString(idBytes)}, nil
+	return sealKey{aead: aead, id: hex.EncodeToString(idBytes)}, nil
 }
 
-// KeyID identifies the secret, without revealing it. It's stored next to each
+// KeyID identifies the current secret, without revealing it. It's stored next to each
 // encrypted key, so a wrong or rotated secret is detected rather than failing obscurely.
-func (s *Sealer) KeyID() string { return s.keyID }
+func (s *Sealer) KeyID() string { return s.current.id }
+
+// PreviousKeyID identifies the secret being retired, or is empty when there's none.
+func (s *Sealer) PreviousKeyID() string {
+	if s.previous == nil {
+		return ""
+	}
+	return s.previous.id
+}
 
 // Seal encrypts a private key for an actor.
 func (s *Sealer) Seal(actorID uuid.UUID, key *rsa.PrivateKey) ([]byte, error) {
@@ -117,24 +148,30 @@ func (s *Sealer) Seal(actorID uuid.UUID, key *rsa.PrivateKey) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, s.aead.NonceSize())
+	nonce := make([]byte, s.current.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
 	out := append([]byte{sealVersion}, nonce...)
-	return s.aead.Seal(out, nonce, der, actorID[:]), nil
+	return s.current.aead.Seal(out, nonce, der, actorID[:]), nil
 }
 
-// Open decrypts an actor's private key.
+// Open decrypts an actor's private key, with whichever secret keyID names.
 func (s *Sealer) Open(actorID uuid.UUID, keyID string, sealed []byte) (*rsa.PrivateKey, error) {
-	if keyID != s.keyID {
+	var k sealKey
+	switch {
+	case keyID == s.current.id:
+		k = s.current
+	case s.previous != nil && keyID == s.previous.id:
+		k = *s.previous
+	default:
 		return nil, ErrWrongSecret
 	}
-	nonceSize := s.aead.NonceSize()
+	nonceSize := k.aead.NonceSize()
 	if len(sealed) < 1+nonceSize || sealed[0] != sealVersion {
 		return nil, ErrCorrupt
 	}
-	der, err := s.aead.Open(nil, sealed[1:1+nonceSize], sealed[1+nonceSize:], actorID[:])
+	der, err := k.aead.Open(nil, sealed[1:1+nonceSize], sealed[1+nonceSize:], actorID[:])
 	if err != nil {
 		return nil, ErrCorrupt
 	}
