@@ -17,10 +17,15 @@ make secrets   # or: deploy/make-secrets.sh [DIR]
 | `secret_key`    | Encrypts actors' private signing keys (generated, ADR 0012)   | worker            |
 | `backup_key`    | Encrypts backups (generated, ADR 0016)                        | backup            |
 | `mfa_key`       | Encrypts authenticator (TOTP) secrets (generated, ADR 0014)   | app               |
+| `secret_key_previous` | Empty, except while `secret_key` is being rotated (ADR 0025) | worker      |
+| `mfa_key_previous`    | Empty, except while `mfa_key` is being rotated (ADR 0025)    | app         |
 | `smtp_password` | Your email provider's SMTP password (may be empty)            | worker            |
 | `s3_access_key` | Your storage provider's access key ID                         | app, worker, migrate |
 | `s3_secret_key` | Your storage provider's secret key                            | app, worker, migrate |
 
+- Don't replace `secret_key` or `mfa_key` directly: rotate them (docs/DEVELOPMENT.md,
+  "Rotating encryption keys"), which keeps the old key in `*_previous` until everything
+  is re-encrypted.
 - The script never overwrites a file. Changing `db_password` after the database was
   created doesn't change the database's password; change it in Postgres too.
 - **Keep an offline copy of `backup_key`, `secret_key`, and `mfa_key`**, away from this

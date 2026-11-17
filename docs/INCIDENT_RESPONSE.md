@@ -117,10 +117,10 @@ Most takeovers start with a reused password. If several accounts are taken over 
 
 1. **Keep evidence:** logs first (see above), then a snapshot of the server's disk through the hosting provider.
 2. **Cut off access.** Take the instance offline if someone may still be inside (`docker compose down`, or block traffic at the hosting provider). Then change every credential that may have been seen, rebuilding the server from a clean install if it was compromised. Today that's done by hand: replace the file in `secrets/` with a new value, change it at its source (the hosting provider's storage keys, the email provider's SMTP password, or `ALTER ROLE petcommunity PASSWORD ...` in the database), and restart the services that use it.
-3. **Know which secrets can't be changed yet** (DEVELOPMENT.md):
-   - `PC_SECRET_KEY` (`secret_key`): encrypts actors' signing keys and abuse imagery evidence. Changing it makes both unreadable, so it can't be rotated yet. If it leaked together with the database or the evidence bucket, the evidence and the keys must be treated as exposed.
-   - `mfa_key`: encrypts authenticator secrets. If it leaked together with the database, ask every account with two-step sign-in to remove its authenticator and set it up again.
-   - `backup_key`: anyone holding it and a copy of the backups can read everything in them.
+3. **Rotate the encryption keys,** following DEVELOPMENT.md, "Rotating encryption keys" (ADR 0025). Don't just replace them: that would make what they encrypt unreadable. Rotating protects data from now on; it can't take back copies already made, so:
+   - `PC_SECRET_KEY` (`secret_key`): encrypts actors' signing keys and abuse imagery evidence. If it leaked together with the database or the evidence bucket, treat the evidence and the keys as exposed, and delete old versions of evidence files if the bucket allows it.
+   - `mfa_key`: encrypts authenticator secrets. If it leaked together with the database, rotate it and also ask every account with two-step sign-in to remove its authenticator and set it up again: the leaked secrets still generate valid codes.
+   - `backup_key` can't be rotated in place: anyone holding it and a copy of the backups can read everything in them. New backups can use a new key, but each old one needs the key it was made with.
 4. **Find out what was exposed:** which data (THREAT_MODEL.md, "Assets": adopter details and precise locations are the most sensitive), whose, and from when to when. If the database was changed, restore it to a point before the compromise (DEVELOPMENT.md, "Restoring from a backup") once the server is clean.
 5. **Notify, with legal counsel.** If personal information was exposed, state breach laws apply according to **where the affected people live**, not where the instance runs. Deadlines differ by state: the shortest give 30 days to notify the people affected (Washington, Colorado, Florida, and Maine, among others), and several also require notice to the state's attorney general once 500 or more of its residents are affected. Some count from when the breach was discovered, others from when it was confirmed, which is why the incident log records both. Notices go from the operator. Also tell the hosting provider, and, if passwords may have leaked, every affected account.
 6. **If the cause was a flaw in the project's code,** report it as SECURITY.md describes, so other instances are fixed too.
@@ -154,6 +154,6 @@ Known weak points, in rough order of importance. Each one is also tracked where 
 - **There's no backup person**, so a serious incident depends on one person being reachable. It stays that way while the project lead runs everything alone (see [Roles and contacts](#roles-and-contacts)).
 - **A reported image that no scanner matched can't be turned into a case** with preserved evidence.
 - **No moderation tools yet:** the `accounts` and `signups` commands cover suspending, reinstating, removing a passkey, and stopping sign-ups, but there's no way yet to review reports or act on content.
-- **`PC_SECRET_KEY` and `mfa_key` can't be rotated**, and rotating the other secrets isn't scripted.
+- **Rotating the other secrets isn't scripted** (database password, storage and SMTP credentials), and `backup_key` can't be rotated in place. `PC_SECRET_KEY` and `mfa_key` can (ADR 0025).
 - **Little to investigate with:** no request logs, no upload IP addresses (ADR 0022), and container logs capped at 50 MB per container.
 - **No templates** for breach notices or for messages to affected users.

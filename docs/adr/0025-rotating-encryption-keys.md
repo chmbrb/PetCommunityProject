@@ -57,7 +57,7 @@ Two things outlive a rotation:
 - Rotation doesn't reach copies made before it: old backups, and old evidence object versions in a versioned or locked bucket, stay readable with the old key until they expire. That's why the retired key is destroyed only once they have.
 - Evidence moves to sealed format version 2. Version 1 stays readable until every file is re-encrypted.
 - `backup_key` (WAL-G's) is outside this decision: new backups can use a new key at any time, but each old backup needs the key it was made with. Rotating it is a separate procedure, with the off-site backup work.
-- Follow-up work: the keyrings, the evidence format, the two commands, the new settings in `compose.yaml` and `make secrets`, and the procedure in DEVELOPMENT.md and INCIDENT_RESPONSE.md.
+- Built: the keyrings, evidence format version 2, `petcommunity keys status` and `keys reencrypt`, the `*_previous` files in `compose.yaml` and `make secrets`, and the procedure in DEVELOPMENT.md ("Rotating encryption keys") and INCIDENT_RESPONSE.md.
 
 ## Alternatives considered
 
