@@ -31,7 +31,7 @@ func NewInserter(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client[pgx.Tx]
 }
 
 // NewWorker returns a client that runs every job type, for the worker process.
-func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, mediaSvc *media.Service, cases *abusecases.Service, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, keys *KeyMaker, mediaSvc *media.Service, cases *abusecases.Service, alerts *AbuseAlertWorker, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, auth.NewEmailWorker(emailer))
 	river.AddWorker(workers, &CleanupWorker{db: db, logger: logger})
@@ -40,6 +40,7 @@ func NewWorker(pool *pgxpool.Pool, db *database.Store, emailer *auth.Emailer, ke
 	river.AddWorker(workers, &MediaWorker{media: mediaSvc})
 	river.AddWorker(workers, &MediaCleanupWorker{media: mediaSvc, logger: logger})
 	river.AddWorker(workers, &AbuseCasePurgeWorker{cases: cases, logger: logger})
+	river.AddWorker(workers, alerts)
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger:  logger,

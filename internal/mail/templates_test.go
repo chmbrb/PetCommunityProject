@@ -145,3 +145,28 @@ func TestRecorder(t *testing.T) {
 		t.Fatalf("Messages = %+v", got)
 	}
 }
+
+func TestAbuseAlert(t *testing.T) {
+	msg, err := AbuseAlert("abuse@pets.example.org", AbuseAlertEmail{
+		InstanceName: "Example Pets", CaseID: "0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b", OpenedAt: "2026-11-17T08:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.To != "abuse@pets.example.org" || !strings.Contains(msg.Subject, "Example Pets") {
+		t.Errorf("to %q, subject %q", msg.To, msg.Subject)
+	}
+	for _, want := range []string{
+		"Case: 0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+		"Opened: 2026-11-17T08:00:00Z",
+		"cases show 0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+		"CyberTipline",
+	} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("text is missing %q:\n%s", want, msg.Text)
+		}
+	}
+	if msg.HTML != "" {
+		t.Error("the alert is plain text only")
+	}
+}

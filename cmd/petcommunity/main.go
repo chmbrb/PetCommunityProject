@@ -216,17 +216,24 @@ func work(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	emailer := auth.NewEmailer(cfg, st, sender, logger)
 	keys := jobs.NewKeyMaker(st, sealer, logger)
-	mediaSvc := media.NewService(st, objects, nil, media.Scanning{Scanner: scanner, Evidence: evidence}, logger)
+	// A match queues the operator's alert in the same transaction as its case.
+	inserter, err := jobs.NewInserter(pool, logger)
+	if err != nil {
+		return err
+	}
+	mediaSvc := media.NewService(st, objects, inserter, media.Scanning{Scanner: scanner, Evidence: evidence}, logger)
 	// Purging only deletes evidence, so it doesn't need the sealer.
 	caseSvc := abusecases.New(st, objects.Evidence, nil)
-	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, caseSvc, logger)
+	alerts := jobs.NewAbuseAlertWorker(sender, cfg.AbuseScan.AlertEmail, cfg.InstanceName)
+	client, err := jobs.NewWorker(pool, st, emailer, keys, mediaSvc, caseSvc, alerts, logger)
 	if err != nil {
 		return err
 	}
 	if err := client.Start(ctx); err != nil {
 		return fmt.Errorf("start worker: %w", err)
 	}
-	logger.Info("worker started", "version", version.Version, "smtp_host", cfg.Mail.Host, "abuse_scanner", scanner.Name())
+	logger.Info("worker started", "version", version.Version, "smtp_host", cfg.Mail.Host, "abuse_scanner", scanner.Name(),
+		"abuse_alert_email", cfg.AbuseScan.AlertEmail)
 	if !cfg.AbuseScan.Enabled() {
 		logger.Warn("no abuse imagery scanner is configured; uploads are limited to accounts with a confirmed email (ADR 0022)")
 	}

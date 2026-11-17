@@ -75,6 +75,26 @@ func MFAChanged(to string, data LinkEmail) (Message, error) {
 	return render(to, "Two-step sign-in changed on your "+data.InstanceName+" account", "mfa_changed", data)
 }
 
+// AbuseAlertEmail is the content of the operator's alert about a new abuse imagery case.
+type AbuseAlertEmail struct {
+	InstanceName string
+	CaseID       string
+	// OpenedAt is when the case was opened, in RFC 3339.
+	OpenedAt string
+}
+
+// AbuseAlert tells the operator that a match opened an abuse imagery case (ADR 0022).
+// It's plain text and carries only the case, for the operator to look up on the
+// instance.
+func AbuseAlert(to string, data AbuseAlertEmail) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "abuse_alert.txt", data); err != nil {
+		return Message{}, err
+	}
+	subject := "Action needed: abuse imagery case opened on " + data.InstanceName
+	return Message{To: to, Subject: subject, Text: strings.TrimSpace(text.String()) + "\n"}, nil
+}
+
 func render(to, subject, name string, data LinkEmail) (Message, error) {
 	var text, html bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, name+".txt", data); err != nil {

@@ -333,6 +333,13 @@ func TestAbuseImageryMatchIsPreservedAndSuspendsTheAccount(t *testing.T) {
 	if cases != 1 {
 		t.Errorf("cases after reprocessing = %d, want 1", cases)
 	}
+	// One alert for the operator, queued with the case, holding only the case's ID.
+	var alerts int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'abuse_imagery_alert'
+		AND args->>'case_id' = (SELECT id::text FROM abuse_imagery_cases WHERE media_id = $1)`, id).Scan(&alerts)
+	if alerts != 1 {
+		t.Errorf("operator alerts queued = %d, want 1", alerts)
+	}
 
 	// The evidence and the account can't be deleted while the case exists.
 	if _, err := e.pool.Exec(ctx, `DELETE FROM accounts WHERE id = $1`, pk.accountID); err == nil {
