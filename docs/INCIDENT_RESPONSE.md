@@ -78,10 +78,11 @@ Abuse imagery cases have their own command, `petcommunity cases` ([DEVELOPMENT.m
 
 ### Abuse imagery
 
-**How you'll know:** the worker logs `upload matched known abuse imagery` at error level, and the upload's account is already suspended and signed out (ADR 0022). Nothing notifies you yet, so check daily until it does:
+**How you'll know:** an email to `PC_ABUSE_ALERT_EMAIL` ("Action needed: abuse imagery case opened"), with the case ID and the next steps. By the time it arrives, the upload's account is already suspended and signed out (ADR 0022). It goes to `abuse@` the instance's domain unless set otherwise: at launch, a group address for everyone who handles reports. In development it goes to Mailpit. The worker also logs `upload matched known abuse imagery` at error level.
+
+An alert can be delayed or lost (the email provider is down, or the group's settings changed), so check for open cases once a week too:
 
 ```sh
-docker compose logs --since 25h worker | grep 'matched known abuse imagery'
 docker compose run --rm -T worker cases list
 ```
 
@@ -160,9 +161,8 @@ Within two weeks, write a short review in the incident log: what happened, how i
 
 ## Gaps found while writing this
 
-Known weak points, in rough order of importance. Each one is also tracked where it belongs:
+Known weak points, in rough order of importance. Each one is also tracked where it belongs. (Alerting the operator about a match was the first; it's done.)
 
-- **Nobody is notified of an abuse imagery match**; it's only a log line (ADR 0022, follow-ups).
 - **There's no backup person**, so a serious incident depends on one person being reachable. It stays that way while the project lead runs everything alone (see [Roles and contacts](#roles-and-contacts)).
 - **A reported image that no scanner matched can't be turned into a case** with preserved evidence.
 - **No moderation tools:** suspending, finding accounts, and stopping sign-ups mean SQL by hand.
